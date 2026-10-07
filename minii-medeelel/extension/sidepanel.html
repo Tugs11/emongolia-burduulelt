@@ -60,10 +60,12 @@
     <div class="step">Тохиргоо</div>
     <div class="small muted">AI үйлчилгээ</div>
     <select id="provider" style="width:100%;background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px;font:inherit">
-      <option value="gemini">Google Gemini (үнэгүй)</option>
-      <option value="claude">Claude (төлбөртэй)</option>
-      <option value="worker">Cloudflare Worker (бусдад тараах үед)</option>
+      <option value="service">Миний мэдээлэл AI сервис (тохиргоо хэрэггүй)</option>
+      <option value="gemini">Өөрийн Google Gemini key</option>
+      <option value="claude">Өөрийн Claude key (төлбөртэй)</option>
+      <option value="worker">Өөр Worker URL</option>
     </select>
+    <div data-p="service" class="small muted" style="margin-top:8px">AI-г төслийн сервисээр дамжуулан ажиллуулна. Key үүсгэх шаардлагагүй.</div>
     <div data-p="gemini">
       <div class="small muted" style="margin-top:8px">aistudio.google.com → <b>Get API key</b> дарж үнэгүй key авна. Key зөвхөн энэ компьютерийн Chrome-д хадгалагдана.</div>
       <input id="geminiKey" placeholder="AIza…" type="password" autocomplete="off">

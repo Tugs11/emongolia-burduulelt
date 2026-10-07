@@ -1,6 +1,7 @@
 import { SOURCES } from "./sources.js";
 import { redact, diff, putSnapshot, previousSnapshot, trimForAi, shape } from "./lib.js";
 import { summarize, summarizeGemini } from "./ai.js";
+import { SERVICE_URL } from "./config.js";
 import Anthropic from "./vendor/anthropic.js";
 
 const $ = id => document.getElementById(id);
@@ -14,8 +15,9 @@ for (const id of ["geminiKey", "apiKey"]) {
   $(id).value = cfg[id] || "";
   $(id).onchange = () => chrome.storage.local.set({ [id]: $(id).value.trim() });
 }
-$("provider").value = cfg.provider || "gemini";
+$("provider").value = cfg.provider || (SERVICE_URL ? "service" : "gemini");
 const PRIVACY = {
+  service: "AI руу нэр, РД, хаягийг хассан мэдээлэл төслийн сервисээр дамжин очно. Сервис түүнийг хадгалахгүй.",
   gemini: "Анхаар: Gemini-ийн үнэгүй хувилбарт Google илгээсэн мэдээллийг бүтээгдэхүүнээ сайжруулахад ашиглаж, хүн уншиж магадгүй. Нэр, РД, хаягийг хассан ч даатгал, зээлийн мэдээлэл очно.",
   claude: "", worker: "",
 };
@@ -101,8 +103,8 @@ async function runAi(payload) {
     if (!r.ok) throw new Error(r.message);
     return r.data;
   }
-  const worker = $("worker").value.trim().replace(/\/$/, "");
-  if (!worker) throw new Error("Тохиргоо хэсэгт Worker URL оруулна уу.");
+  const worker = (provider === "service" ? SERVICE_URL : $("worker").value.trim()).replace(/\/$/, "");
+  if (!worker) throw new Error(provider === "service" ? "AI сервис хараахан тохируулагдаагүй байна (config.js → SERVICE_URL)." : "Тохиргоо хэсэгт Worker URL оруулна уу.");
   const r = await fetch(worker + "/summarize", {
     method: "POST",
     headers: { "content-type": "application/json", "x-app-token": $("appToken").value.trim() },

@@ -47,32 +47,30 @@ worker/ (Cloudflare, Claude): /summarize — бусдад тараах үед ke
 1. `chrome://extensions` руу орж Developer mode-ыг асаана. **Load unpacked** дарж `minii-medeelel/extension` хавтсыг сонгоно.
 2. e-Mongolia-д ДАН-аар нэвтэрнэ. Extension-ий дүрс дээр дарж **Шинэчлэх** дарна.
 
-**AI хураангуй: Google Gemini (үнэгүй, анхны тохиргоо)**
-1. https://aistudio.google.com руу Google бүртгэлээрээ нэвтэрнэ. **Get API key** → **Create API key** дарж `AIza…` хэлбэрийн key авна. Карт шаардахгүй.
-2. Side panel-ийн **Тохиргоо** хэсэгт «Google Gemini (үнэгүй)» сонгогдсон эсэхийг шалгаад key-ээ буулгаж Enter дарна.
-3. **AI-аар хураангуйлах** дарна. `gemini-3.8-flash` загвар ашиглана.
+**AI: хэрэглэгч key үүсгэхгүй (санал болгох)**
 
-> ⚠️ Gemini-ийн үнэгүй хувилбарт Google илгээсэн мэдээллийг бүтээгдэхүүнээ сайжруулахад ашиглаж, хүн уншиж магадгүй ([үнийн хуудас](https://ai.google.dev/gemini-api/docs/pricing)). Extension нэр, РД, хаяг, төрсөн огноог хасдаг ч даатгал, зээл, хөрөнгийн мэдээлэл очно. Үүнийг хүсэхгүй бол Claude (төлбөртэй) эсвэл төлбөртэй Gemini key ашиглана.
-
-**Claude (төлбөртэй):** Тохиргоонд «Claude» сонгоод console.anthropic.com-ийн key-ээ оруулна. Загвар нь Claude Opus 5.5, нэг хураангуй хэдэн центийн зардалтай.
-
-**Бусдад тараах үед: Cloudflare Worker (заавал биш)**
-
-Ингэвэл API key хэрэглэгчийн компьютерт биш, серверт хадгалагдана.
+Төслийн эзэн AI сервисийг ([worker/](worker/)) нэг удаа deploy хийнэ. Ингэснээр бүх хэрэглэгч эзний **нэг** key-ээр AI ашиглана.
 ```bash
 cd minii-medeelel/worker
 npm install
-npx wrangler login
-npx wrangler secret put ANTHROPIC_API_KEY
-npx wrangler secret put APP_TOKEN
-npx wrangler deploy
+npx wrangler login                       # Cloudflare бүртгэл (үнэгүй)
+npx wrangler secret put GEMINI_API_KEY   # aistudio.google.com-ийн key
+npx wrangler deploy                      # → https://minii-medeelel-ai.<нэр>.workers.dev
 ```
-Тохиргоо → «Эсвэл Cloudflare Worker ашиглах» хэсэгт URL болон `APP_TOKEN`-оо оруулна. API key талбарыг хоосон үлдээнэ.
+Гарсан URL-ийг [extension/config.js](extension/config.js)-ийн `SERVICE_URL`-д бичээд push хийнэ. Үүний дараа extension суулгасан хүн бүр **тохиргоогүйгээр** «AI-аар хураангуйлах» товчийг шууд ашиглана.
 
-AI-ийн логик (prompt, JSON schema, загвар) нь [extension/ai.js](extension/ai.js)-д байгаа бөгөөд хоёр горим хоёулаа үүнийг ашигладаг. `extension/vendor/anthropic.js` нь албан ёсны `@anthropic-ai/sdk`-ийг esbuild-ээр bundle хийсэн файл:
-```bash
-cd minii-medeelel/worker && echo 'export { default } from "@anthropic-ai/sdk";' > e.mjs && npx esbuild e.mjs --bundle --format=esm --platform=browser --minify --outfile=../extension/vendor/anthropic.js && rm e.mjs
-```
+Хамгаалалт: extension-д нууц хадгалах боломжгүй тул сервисийг дараах байдлаар хамгаалдаг:
+- IP тус бүрт минутад 5 хүсэлт
+- зөвхөн `chrome-extension://` origin-оос ирсэн хүсэлтэд CORS зөвшөөрнө
+- 200KB-аас том өгөгдлийг хүлээн авахгүй
+- мэдээллийг хадгалахгүй
+
+**Бусдад тараахаас өмнө:**
+- Gemini-ийн үнэгүй хязгаар нэг key-д ногддог тул бүх хэрэглэгч түүнийг хуваалцана. Хэрэглэгч олон болбол «хязгаарт хүрлээ» алдаа гарна.
+- Үнэгүй хувилбарт Google мэдээллийг бүтээгдэхүүнээ сайжруулахад ашигладаг. **Бусдын** хувийн мэдээлэл дамжих тул Gemini-ийн төлбөртэй хувилбар руу шилжих хэрэгтэй. Төлбөртэй хувилбарт мэдээллийг ингэж ашигладаггүй.
+- Та бусдын хувийн мэдээллийг боловсруулж байгаа тул Хүний хувийн мэдээлэл хамгаалах тухай хуулийн дагуу хэрэглэгчээс зөвшөөрөл авч, нууцлалын бодлого гаргах шаардлагатай.
+
+**Хэрэглэгч өөрийн key ашиглах (заавал биш):** Тохиргоо → «Өөрийн Google Gemini key» эсвэл «Өөрийн Claude key» сонгоно.
 
 ## Нууцлал
 
