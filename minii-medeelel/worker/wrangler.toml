@@ -1,0 +1,8 @@
+name = "minii-medeelel-ai"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Нууц утгууд (кодонд бичихгүй):
+#   npx wrangler secret put ANTHROPIC_API_KEY
+#   npx wrangler secret put APP_TOKEN      # extension-ий тохиргоонд оруулах дурын урт нууц үг

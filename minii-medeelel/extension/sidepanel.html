@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="mn">
+<head>
+<meta charset="utf-8">
+<title>Миний мэдээлэл AI</title>
+<style>
+  :root { --bg:#0f1726; --card:#1b2638; --line:#2c3a52; --text:#e8eef8; --muted:#93a3bd; --accent:#4f8cff; --ok:#3ecf8e; --warn:#f5b84a; --err:#ff6b6b; }
+  * { box-sizing:border-box; }
+  body { margin:0; padding:16px; background:var(--bg); color:var(--text); font:14px/1.45 system-ui, sans-serif; }
+  h1 { font-size:17px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:12px; margin-bottom:14px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:12px; }
+  .step { font-size:12px; color:var(--muted); text-transform:uppercase; letter-spacing:.04em; margin-bottom:8px; }
+  button { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:8px 12px; font:inherit; cursor:pointer; }
+  button.ghost { background:transparent; border:1px solid var(--line); color:var(--text); }
+  button:disabled { opacity:.5; cursor:default; }
+  input { width:100%; background:#0b1220; color:var(--text); border:1px solid var(--line); border-radius:8px; padding:8px; font:inherit; margin-top:6px; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:8px; align-items:center; }
+  .small { font-size:12px; }
+  .ok{color:var(--ok)} .warn{color:var(--warn)} .err{color:var(--err)} .muted{color:var(--muted)}
+  .alert { border-left:3px solid var(--line); padding:6px 10px; margin:8px 0; border-radius:4px; background:#0b1220; }
+  .alert.urgent { border-color:var(--err); } .alert.warning { border-color:var(--warn); } .alert.info { border-color:var(--accent); }
+  .alert b { display:block; }
+  .chg { padding:4px 0; border-top:1px solid var(--line); font-size:13px; }
+  .chg:first-child { border-top:0; }
+  pre { white-space:pre-wrap; word-break:break-word; font-size:11px; background:#0b1220; padding:8px; border-radius:8px; max-height:240px; overflow:auto; }
+  details summary { cursor:pointer; color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+  <h1>Миний мэдээлэл AI</h1>
+  <div class="sub">e-Mongolia-д өөрөө нэвтэрсний дараа «Шинэчлэх» дарна. Мэдээлэл таны компьютер дээр хадгалагдана.</div>
+
+  <div class="card">
+    <div class="step">1 · Мэдээлэл татах</div>
+    <div class="row">
+      <button id="refresh">Шинэчлэх</button>
+      <button id="openEm" class="ghost">e-Mongolia нээх</button>
+    </div>
+    <div id="refreshNote" class="small muted" style="margin-top:6px"></div>
+    <div id="status" class="small" style="margin-top:6px"></div>
+  </div>
+
+  <div class="card">
+    <div class="step">2 · AI хураангуй</div>
+    <div id="summary" class="muted small">Мэдээллээ шинэчилсний дараа AI-аар хураангуйлна.</div>
+    <div class="row">
+      <button id="summarize" disabled>AI-аар хураангуйлах</button>
+    </div>
+    <div id="privacyNote" class="small warn" style="margin-top:8px"></div>
+    <details style="margin-top:8px"><summary>AI руу юу илгээхийг харах</summary><pre id="preview"></pre></details>
+  </div>
+
+  <div class="card">
+    <div class="step">3 · Өмнөх сараас өөрчлөгдсөн зүйлс</div>
+    <div id="changes" class="muted small">Харьцуулах өмнөх сарын мэдээлэл алга. Дараа сард дахин шинэчлэхэд ялгаа гарна.</div>
+  </div>
+
+  <div class="card">
+    <div class="step">Тохиргоо</div>
+    <div class="small muted">AI үйлчилгээ</div>
+    <select id="provider" style="width:100%;background:#0b1220;color:var(--text);border:1px solid var(--line);border-radius:8px;padding:8px;margin-top:6px;font:inherit">
+      <option value="gemini">Google Gemini (үнэгүй)</option>
+      <option value="claude">Claude (төлбөртэй)</option>
+      <option value="worker">Cloudflare Worker (бусдад тараах үед)</option>
+    </select>
+    <div data-p="gemini">
+      <div class="small muted" style="margin-top:8px">aistudio.google.com → <b>Get API key</b> дарж үнэгүй key авна. Key зөвхөн энэ компьютерийн Chrome-д хадгалагдана.</div>
+      <input id="geminiKey" placeholder="AIza…" type="password" autocomplete="off">
+    </div>
+    <div data-p="claude">
+      <div class="small muted" style="margin-top:8px">console.anthropic.com → API Keys</div>
+      <input id="apiKey" placeholder="sk-ant-…" type="password" autocomplete="off">
+    </div>
+    <div data-p="worker">
+      <input id="worker" placeholder="Worker URL (https://….workers.dev)">
+      <input id="appToken" placeholder="Worker-ийн APP_TOKEN" type="password">
+    </div>
+    <div class="row"><button id="wipe" class="ghost small">Хадгалсан бүх мэдээллийг устгах</button></div>
+  </div>
+
+  <script type="module" src="sidepanel.js"></script>
+</body>
+</html>

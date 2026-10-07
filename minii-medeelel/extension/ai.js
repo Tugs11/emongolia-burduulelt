@@ -1,0 +1,135 @@
+// AI хураангуйн нэгдсэн логик: prompt ба JSON schema нь бүх үйлчилгээнд ижил.
+//  - Google Gemini (үнэгүй хувилбар): summarizeGemini — REST generateContent
+//  - Claude (төлбөртэй): summarize — @anthropic-ai/sdk (Worker-т npm-ээс, extension-д vendor/anthropic.js-ээс)
+
+export const MODEL = "claude-opus-5-5";
+// Үнэгүй хувилбартай загварууд (ai.google.dev/gemini-api/docs/pricing, 2026-10-07). Нэг нь завгүй бол дараагийнх руу шилжинэ.
+export const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.5-flash-lite"];
+
+export const SYSTEM = `Чи Монгол иргэнд e-Mongolia (ХУР)-аас авсан өөрийнх нь төрийн мэдээллийг ойлгомжтой тайлбарладаг туслах.
+Оролт нь JSON: today (өнөөдрийн огноо), sources (эх сурвалж бүрийн ХУР-ын түүхий өгөгдөл), unavailable (татаж чадаагүй эх сурвалж),
+changesSincePreviousMonth (өмнөх сарын агшинтай кодоор харьцуулсан ялгаа: added / removed / changed, эсвэл null).
+
+Хийх зүйл:
+- alerts: хэрэглэгч анхаарах, арга хэмжээ авах зүйлс. Жишээ нь төлөгдөөгүй торгууль (хэдэн хоногийн өмнө үүссэн, дүн),
+  төлөгдөөгүй эрүүл мэндийн даатгалын сарууд, удахгүй дуусах бичиг баримт (үнэмлэх, паспорт, оношилгоо, албан журмын даатгал),
+  хугацаа хэтэрсэн зээл, төлөгдөөгүй нэхэмжлэх. Яаралтай бол "urgent", удахгүй анхаарах бол "warning", мэдээлэл бол "info".
+  action-д юу хийхийг товч бич (жишээ нь «e-Mongolia → Хэтэвч хэсгээс төлнө»).
+- changes: өмнөх сараас юу өөрчлөгдсөнийг хүний хэлээр хураангуйл. Ялгаа null бол хоосон жагсаалт.
+- ok: хэвийн байгаа зүйлс (жишээ нь «ЭМД бүх сар төлөгдсөн»).
+- headline: хамгийн чухал зүйлийг нэг өгүүлбэрээр.
+
+Дүрэм: зөвхөн өгөгдсөн өгөгдөлд тулгуурла, дүн, огноо зохиож болохгүй. Өдрийн тоог today-оос тооцоол.
+Талбарын утга тодорхойгүй бол таамаглахгүй, товч дурд. Монгол хэлээр, богино, энгийн бич. Хувийн танигдах мэдээлэл бичихгүй.`;
+
+export const SCHEMA = {
+  type: "object",
+  properties: {
+    headline: { type: "string" },
+    alerts: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          level: { type: "string", enum: ["urgent", "warning", "info"] },
+          title: { type: "string" },
+          detail: { type: "string" },
+          action: { type: "string" },
+        },
+        required: ["level", "title", "detail", "action"],
+        additionalProperties: false,
+      },
+    },
+    changes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: { area: { type: "string" }, summary: { type: "string" } },
+        required: ["area", "summary"],
+        additionalProperties: false,
+      },
+    },
+    ok: { type: "array", items: { type: "string" } },
+  },
+  required: ["headline", "alerts", "changes", "ok"],
+  additionalProperties: false,
+};
+
+// Амжилттай бол { ok: true, data }, алдаа гарвал { ok: false, status, message } буцаана
+export async function summarize(Anthropic, client, payload) {
+  try {
+    const msg = await client.beta.messages.create({
+      model: MODEL,
+      max_tokens: 16000,
+      // Аюулгүй байдлын шүүлтүүр татгалзвал Anthropic-ийн санал болгосон загвар руу автоматаар шилжинэ
+      betas: ["server-side-fallback-2026-07-01"],
+      fallbacks: "default",
+      output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
+      system: SYSTEM,
+      messages: [{ role: "user", content: JSON.stringify(payload) }],
+    });
+    if (msg.stop_reason === "refusal") return { ok: false, status: 422, message: "AI хариулахаас татгалзлаа" };
+    if (msg.stop_reason === "max_tokens") return { ok: false, status: 502, message: "AI-ийн хариу хэт урт болж тасарлаа" };
+    return { ok: true, data: JSON.parse(msg.content.find(b => b.type === "text").text) };
+  } catch (e) {
+    if (e instanceof Anthropic.AuthenticationError) return { ok: false, status: 401, message: "Anthropic API key буруу байна" };
+    if (e instanceof Anthropic.PermissionDeniedError) return { ok: false, status: 403, message: "API key-д энэ загварыг ашиглах эрх алга" };
+    if (e instanceof Anthropic.RateLimitError) return { ok: false, status: 429, message: "Хэт олон хүсэлт — хэсэг хүлээгээд дахин оролдоно уу" };
+    if (e instanceof Anthropic.BadRequestError) return { ok: false, status: 400, message: "Хүсэлт буруу: " + e.message };
+    if (e instanceof Anthropic.APIConnectionError) return { ok: false, status: 503, message: "Anthropic руу холбогдож чадсангүй" };
+    if (e instanceof Anthropic.APIError) return { ok: false, status: 502, message: `Anthropic API алдаа ${e.status}: ${e.message}` };
+    return { ok: false, status: 500, message: "Алдаа: " + (e.message || e) };
+  }
+}
+
+// Google Gemini API (aistudio.google.com-ийн үнэгүй key). Үр дүн нь summarize()-тэй ижил хэлбэртэй.
+// Загвар завгүй (503) эсвэл хязгаарт хүрсэн (429) бол түр хүлээгээд, дараа нь өөр загвар руу шилжинэ.
+export async function summarizeGemini(apiKey, payload, onProgress = () => {}) {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  let last = null;
+  for (const model of GEMINI_MODELS) {
+    for (let attempt = 0; attempt < 2; attempt++) {
+      onProgress(attempt ? `${model} завгүй байна, дахин оролдож байна…` : `${model} хураангуйлж байна…`);
+      const r = await callGemini(apiKey, payload, model);
+      if (r.ok) return { ...r, model };
+      last = r;
+      if (!r.retry) return r;                    // key буруу, байршил дэмжигдэхгүй гэх мэт — өөр загвар тус болохгүй
+      if (r.status === 503 && attempt === 0) { await sleep(3000); continue; }
+      break;                                     // 429 / 404 / дахин 503 → дараагийн загвар
+    }
+  }
+  return { ...last, message: "Gemini-ийн бүх үнэгүй загвар одоогоор завгүй байна. Хэдэн минутын дараа дахин оролдоно уу. (" + last.message + ")" };
+}
+
+async function callGemini(apiKey, payload, model) {
+  let r;
+  try {
+    r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
+      body: JSON.stringify({
+        systemInstruction: { parts: [{ text: SYSTEM }] },
+        contents: [{ role: "user", parts: [{ text: JSON.stringify(payload) }] }],
+        generationConfig: { responseMimeType: "application/json", responseJsonSchema: SCHEMA },
+      }),
+    });
+  } catch {
+    return { ok: false, status: 503, retry: true, message: "Google Gemini руу холбогдож чадсангүй" };
+  }
+  const j = await r.json().catch(() => null);
+  if (!r.ok) {
+    const reason = j?.error?.details?.find(d => d.reason)?.reason;
+    const msg = j?.error?.message || "";
+    if (reason === "API_KEY_INVALID") return { ok: false, status: 401, message: "Gemini API key буруу байна" };
+    if (/location is not supported/i.test(msg)) return { ok: false, status: 403, message: "Gemini API таны байршилд дэмжигдэхгүй байна" };
+    if ([429, 500, 503, 404].includes(r.status)) return { ok: false, status: r.status, retry: true, message: `${model}: ${r.status === 429 ? "үнэгүй хязгаарт хүрлээ" : msg}` };
+    return { ok: false, status: r.status, message: `Gemini алдаа ${r.status}: ${msg}` };
+  }
+  if (j?.promptFeedback?.blockReason) return { ok: false, status: 422, message: "Gemini хүсэлтийг хаалаа: " + j.promptFeedback.blockReason };
+  const c = j?.candidates?.[0];
+  if (c?.finishReason === "MAX_TOKENS") return { ok: false, status: 502, retry: true, message: "AI-ийн хариу хэт урт болж тасарлаа" };
+  const text = c?.content?.parts?.filter(p => p.text && !p.thought).map(p => p.text).join("");
+  if (!text) return { ok: false, status: 502, retry: true, message: `${model} хоосон хариу буцаалаа (${c?.finishReason || "?"})` };
+  try { return { ok: true, data: JSON.parse(text) }; }
+  catch { return { ok: false, status: 502, retry: true, message: `${model}-ийн хариу JSON биш байна` }; }
+}
