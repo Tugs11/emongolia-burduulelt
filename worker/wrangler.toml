@@ -1,0 +1,5 @@
+name = "burduulelt-parse"
+main = "index.js"
+compatibility_date = "2026-10-01"
+
+# API түлхүүрийг: npx wrangler secret put ANTHROPIC_API_KEY
