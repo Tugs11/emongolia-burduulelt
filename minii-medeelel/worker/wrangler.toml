@@ -3,6 +3,11 @@ main = "src/index.js"
 compatibility_date = "2026-10-01"
 compatibility_flags = ["nodejs_compat"]
 
+# Gemini API зарим бүсэд (жишээ нь Hong Kong) дэмжигддэггүй. Монголоос ирсэн хүсэлт ойрын ийм серверт ажиллавал
+# «location is not supported» алдаа гардаг тул Worker-ийг үргэлж Google-ийн US бүсийн ойролцоо ажиллуулна.
+[placement]
+region = "gcp:us-central1"
+
 # IP тус бүрт минутад 5 хүсэлт (Cloudflare байршил бүрт тусдаа, ойролцоо тоолол)
 [[ratelimits]]
 name = "RATE_LIMITER"

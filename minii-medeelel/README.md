@@ -59,6 +59,10 @@ npx wrangler deploy                      # → https://minii-medeelel-ai.<нэр
 ```
 Гарсан URL-ийг [extension/config.js](extension/config.js)-ийн `SERVICE_URL`-д бичээд push хийнэ. Үүний дараа extension суулгасан хүн бүр **тохиргоогүйгээр** «AI-аар хураангуйлах» товчийг шууд ашиглана.
 
+Байршил: Gemini API зарим бүсэд (жишээ нь Hong Kong) дэмжигддэггүй. Монголоос ирсэн хүсэлт ийм бүсийн Cloudflare серверт ажиллавал «location is not supported» алдаа гардаг. Тиймээс `wrangler.toml`-д `[placement] region = "gcp:us-central1"` тохиргоогоор Worker-ийг АНУ-д ажиллуулдаг.
+
+Тогтвортой байдал: нэг загвар 35 секундэд хариу өгөхгүй, завгүй эсвэл хязгаарт хүрсэн бол дараагийн үнэгүй загвар руу шилжинэ. Загварын жагсаалт нь `extension/ai.js`-ийн `GEMINI_MODELS`.
+
 Хамгаалалт: extension-д нууц хадгалах боломжгүй тул сервисийг дараах байдлаар хамгаалдаг:
 - IP тус бүрт минутад 5 хүсэлт
 - зөвхөн `chrome-extension://` origin-оос ирсэн хүсэлтэд CORS зөвшөөрнө

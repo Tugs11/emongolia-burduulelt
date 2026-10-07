@@ -3,8 +3,9 @@
 //  - Claude (төлбөртэй): summarize — @anthropic-ai/sdk (Worker-т npm-ээс, extension-д vendor/anthropic.js-ээс)
 
 export const MODEL = "claude-opus-5-5";
-// Үнэгүй хувилбартай загварууд (ai.google.dev/gemini-api/docs/pricing, 2026-10-07). Нэг нь завгүй бол дараагийнх руу шилжинэ.
-export const GEMINI_MODELS = ["gemini-3.8-flash", "gemini-3.7-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-3.5-flash-lite"];
+// Үнэгүй хувилбартай загварууд (ai.google.dev/gemini-api/docs/pricing, 2026-10-07). Тогтвортой нь эхэндээ;
+// нэг нь завгүй / гацсан бол дараагийнх руу шилжинэ (2026-10-07: 3.8-flash ачааллаас болж 100+ сек гацаж байв).
+export const GEMINI_MODELS = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-2.5-flash", "gemini-3.5-flash-lite"];
 
 export const SYSTEM = `Чи Монгол иргэнд e-Mongolia (ХУР)-аас авсан өөрийнх нь төрийн мэдээллийг ойлгомжтой тайлбарладаг туслах.
 Оролт нь JSON: today (өнөөдрийн огноо), sources (эх сурвалж бүрийн ХУР-ын түүхий өгөгдөл), unavailable (татаж чадаагүй эх сурвалж),
@@ -14,7 +15,9 @@ changesSincePreviousMonth (өмнөх сарын агшинтай кодоор �
 - alerts: хэрэглэгч анхаарах, арга хэмжээ авах зүйлс. Жишээ нь төлөгдөөгүй торгууль (хэдэн хоногийн өмнө үүссэн, дүн),
   төлөгдөөгүй эрүүл мэндийн даатгалын сарууд, удахгүй дуусах бичиг баримт (үнэмлэх, паспорт, оношилгоо, албан журмын даатгал),
   хугацаа хэтэрсэн зээл, төлөгдөөгүй нэхэмжлэх. Яаралтай бол "urgent", удахгүй анхаарах бол "warning", мэдээлэл бол "info".
-  action-д юу хийхийг товч бич (жишээ нь «e-Mongolia → Хэтэвч хэсгээс төлнө»).
+  action-д юу хийхийг товч бич (жишээ нь «e-Mongolia-д нэвтэрч төлбөрөө шалгана» эсвэл «харьяа байгууллагадаа хандана»).
+  action-д e-Mongolia-аас өөр систем, апп, вэбсайт, банк, төлбөрийн сувгийн нэр бүү бич — өгөгдөлд байхгүй бол
+  тэдгээрийг мэдэхгүй гэж үз.
 - changes: өмнөх сараас юу өөрчлөгдсөнийг хүний хэлээр хураангуйл. Ялгаа null бол хоосон жагсаалт.
 - ok: хэвийн байгаа зүйлс (жишээ нь «ЭМД бүх сар төлөгдсөн»).
 - headline: хамгийн чухал зүйлийг нэг өгүүлбэрээр.
@@ -95,25 +98,34 @@ export async function summarizeGemini(apiKey, payload, onProgress = () => {}) {
       last = r;
       if (!r.retry) return r;                    // key буруу, байршил дэмжигдэхгүй гэх мэт — өөр загвар тус болохгүй
       if (r.status === 503 && attempt === 0) { await sleep(3000); continue; }
-      break;                                     // 429 / 404 / дахин 503 → дараагийн загвар
+      break;                                     // 429 / 404 / timeout / дахин 503 → дараагийн загвар
     }
   }
   return { ...last, message: "Gemini-ийн бүх үнэгүй загвар одоогоор завгүй байна. Хэдэн минутын дараа дахин оролдоно уу. (" + last.message + ")" };
 }
+
+// Хураангуй хийхэд гүн бодолт хэрэггүй тул хурдыг нэмэхийн тулд бууруулна.
+// Gemini 3.x нь thinkingLevel, 2.5 нь thinkingBudget ашигладаг (2.5-flash-д 0 = бодолтгүй).
+const thinkingFor = model => (/^gemini-2\./.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: "low" });
+
+// Загвар хэт ачаалалтай үед хариу өгөхгүй 100+ секунд гацдаг тул хүлээлтийг хязгаарлаж, өөр загвар руу шилжинэ
+const GEMINI_TIMEOUT_MS = 35_000;
 
 async function callGemini(apiKey, payload, model) {
   let r;
   try {
     r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
       method: "POST",
+      signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: SYSTEM }] },
         contents: [{ role: "user", parts: [{ text: JSON.stringify(payload) }] }],
-        generationConfig: { responseMimeType: "application/json", responseJsonSchema: SCHEMA },
+        generationConfig: { responseMimeType: "application/json", responseJsonSchema: SCHEMA, thinkingConfig: thinkingFor(model) },
       }),
     });
-  } catch {
+  } catch (e) {
+    if (e?.name === "TimeoutError") return { ok: false, status: 504, retry: true, message: `${model} ${GEMINI_TIMEOUT_MS / 1000} секундэд хариу өгсөнгүй` };
     return { ok: false, status: 503, retry: true, message: "Google Gemini руу холбогдож чадсангүй" };
   }
   const j = await r.json().catch(() => null);
@@ -122,7 +134,7 @@ async function callGemini(apiKey, payload, model) {
     const msg = j?.error?.message || "";
     if (reason === "API_KEY_INVALID") return { ok: false, status: 401, message: "Gemini API key буруу байна" };
     if (/location is not supported/i.test(msg)) return { ok: false, status: 403, message: "Gemini API таны байршилд дэмжигдэхгүй байна" };
-    if ([429, 500, 503, 404].includes(r.status)) return { ok: false, status: r.status, retry: true, message: `${model}: ${r.status === 429 ? "үнэгүй хязгаарт хүрлээ" : msg}` };
+    if ([429, 500, 503, 504, 524, 404].includes(r.status)) return { ok: false, status: r.status, retry: true, message: `${model}: ${r.status === 429 ? "үнэгүй хязгаарт хүрлээ" : msg}` };
     return { ok: false, status: r.status, message: `Gemini алдаа ${r.status}: ${msg}` };
   }
   if (j?.promptFeedback?.blockReason) return { ok: false, status: 422, message: "Gemini хүсэлтийг хаалаа: " + j.promptFeedback.blockReason };
