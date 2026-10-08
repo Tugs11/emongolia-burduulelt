@@ -32,7 +32,6 @@ let chat = ((await chrome.storage.local.get("chat")).chat || []).map(m => {
 });
 
 $("openEm").onclick = () => chrome.tabs.create({ url: "https://e-mongolia.mn/home" });
-render();
 
 // e-Mongolia-оос мэдээлэл татах явц (content.js-ээс)
 chrome.runtime.onMessage.addListener(msg => {
@@ -313,4 +312,14 @@ function render() {
     return `<div>${st?.ok ? `<span class="ok">✓</span>` : `<span class="err">✗</span>`} ${esc(s.name)} <span class="muted" style="font-size:11px">${esc(detail)}</span></div>`;
   }).join("");
   $("preview").textContent = JSON.stringify(aiPayload(), null, 2);
+}
+
+// Эхний зурагт: бүх тогтмол (DOC_STATUS, pdfs…) тодорхойлогдсоны дараа дуудна — эрт дуудвал ReferenceError гарч
+// chat, санал болгох асуултууд зурагдахгүй байсан. Хуучин хувилбарын chat өгөгдөл таарахгүй бол цэвэрлээд дахин зурна.
+try { render(); }
+catch (e) {
+  console.error(e);
+  chat = [];
+  await chrome.storage.local.remove("chat");
+  render();
 }
