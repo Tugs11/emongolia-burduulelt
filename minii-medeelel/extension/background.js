@@ -90,7 +90,7 @@ async function collect(item, index, folder) {
   pendingName = `${folder ? safeName(folder) + "/" : ""}${String(index + 1).padStart(2, "0")}_${safeName(item.title)}`;
   // Маягтын утга: НДШ мэт хугацаатай лавлагаанд визийн шаардлагаас тооцсон он, «Хаана зориулж»-д хаана өгөх
   const y = new Date().getFullYear(), years = Math.min(10, Math.max(1, item.fill?.years || 1));
-  const fill = { startYear: y - years, endYear: y, addressee: item.fill?.addressee || "" };
+  const fill = { startYear: y - years, endYear: y, addressee: item.fill?.addressee || "", subject: item.fill?.subject || "self" };
   const dl = waitForDownload(90000);
   try {
     return await getPdf(tab.id, dl, fill);
@@ -116,11 +116,10 @@ async function getPdf(tabId, dl, fill) {
     last = await send(tabId, { type: "PROBE" }).catch(() => null); // хуудас ачаалж байвал дараагийн удаа
     if (!last) continue;
     if (last.pdf) {
+      // PDF-ийг тусад нь хадгалахгүй — side panel бүгдийг нь нэг ZIP багц болгож нэг удаа татна
       const r = await send(tabId, { type: "READ_PDF", src: last.pdf });
       if (!r?.ok) return { ok: false, error: r?.error || "PDF уншиж чадсангүй", url: last.url };
-      await chrome.downloads.download({ url: r.dataUrl });
-      const id = await dl;
-      return id ? { ok: true, downloadId: id } : { ok: false, error: "PDF хадгалж чадсангүй", url: last.url };
+      return { ok: true, dataUrl: r.dataUrl, size: r.size };
     }
     if (last.login) return { ok: false, error: "NOT_LOGGED_IN", url: last.url };
     if (last.confirm) {
@@ -133,14 +132,24 @@ async function getPdf(tabId, dl, fill) {
         await send(tabId, { type: "CONFIRM_CLICK", label: "Шинээр авах" });
         continue;
       }
+      // «Таны мэдээлэл бүртгэлгүй байна. Та мэдээлэл хариуцагч X-д хандана уу» — алдаа биш, тухайн бүртгэл байхгүй
+      if (/бүртгэлгүй байна/i.test(c.content))
+        return { ok: false, error: "NOT_REGISTERED", detail: (c.content.match(/хариуцагч\s+(.+?)-д\s+хандана/i) || [])[1] || "", url: last.url };
       return { ok: false, error: "e-Mongolia: " + c.content.slice(0, 200), url: last.url };
     }
     if (last.needsInput) {
       // /apply маягт: танигдах талбаруудыг бөглөөд «Үргэлжлүүлэх» дарна (энд зөвхөн үнэгүй, шууд гардаг үйлчилгээ хүрнэ)
       if (!formAt) {
         await sleep(1000); // талбарууд бүрэн зурагдахыг хүлээнэ
-        const f = await send(tabId, { type: "FILL_FORM", fill });
-        if (!f?.hasForm || f.missing.length || f.errors.length)
+        // Сонголт хийсний дараа шинэ талбар гарч ирж болох тул (жишээ нь «Хүүхдийн» → хүүхэд сонгох) хэд хэдэн удаа бөглөнө
+        let f = null, any = false;
+        for (let round = 0; round < 4; round++) {
+          f = await send(tabId, { type: "FILL_FORM", fill });
+          if (!f?.filled?.length) break;
+          any = true;
+          await sleep(800);
+        }
+        if (!f || (!f.hasForm && !any) || f.missing.length || f.errors.length)
           return { ok: false, error: "NEEDS_INPUT", detail: f?.missing?.length ? "бөглөх: " + f.missing.join(", ") : (f?.errors || []).join("; "), url: last.url };
         const c = await send(tabId, { type: "CLICK", label: "Үргэлжлүүлэх", exact: true, timeout: 3000 });
         if (!c?.ok) return { ok: false, error: "NEEDS_INPUT", detail: "«Үргэлжлүүлэх» товч олдсонгүй", url: last.url };
@@ -162,4 +171,5 @@ chrome.runtime.onMessage.addListener((msg, _s, reply) => {
   if (msg.type === "COLLECT_DOC") { collect(msg.item, msg.index, msg.folder).then(reply, e => reply({ ok: false, error: String(e) })); return true; }
   if (msg.type === "OPEN_FILE") { chrome.downloads.open(msg.id); reply({}); }
   if (msg.type === "SHOW_FILE") { chrome.downloads.show(msg.id); reply({}); }
+  if (msg.type === "SHOW_FOLDER") { chrome.downloads.showDefaultFolder(); reply({}); }
 });

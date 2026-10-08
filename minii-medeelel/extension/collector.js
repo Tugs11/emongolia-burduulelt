@@ -82,13 +82,20 @@
   }
 
   // --- /apply маягт бөглөх (Ant Design Form) ---
-  // Шошгоор нь танина: «Эхлэх он» / «Дуусах он» → визийн шаардлагаас тооцсон он, «Хаана зориулж» → addressee.
+  // 2026-10-08-нд 12 лавлагаан дээр туршсан. Талбарыг шошгоор нь танина:
+  //   «Эхлэх он» / «Дуусах он» → визийн/зорилгын шаардлагаас тооцсон он (НДШ)
+  //   «Хаана зориулж»          → addressee, ирээгүй бол маягтын «Жишээ нь: …» текст
+  //   «Ү дугаар»                → ХУР-аас хэрэглэгчийн үл хөдлөх хөрөнгийн дугаар (ганц хөрөнгөтэй бол)
+  //   radio («Хэнд», хүн сонгох) → ганц сонголт, эсвэл «Өөртөө» / «Хүүхдийн»-ийг subject-ээр
   // Танихгүй шаардлагатай талбарыг бөглөхгүй — тэр үед хэрэглэгч өөрөө бөглөнө.
   const RULES = [
     { re: /эхлэх\s*(он|огноо)|(^|\s)оноос/, key: "startYear" }, // кирилл үсэгт \b ажилладаггүй
     { re: /дуусах\s*(он|огноо)|он\s*хүртэл/, key: "endYear" },
     { re: /хаана\s*зориулж|хаана\s*(өгөх|ашиглах)|зориулалт|хаашаа/, key: "addressee" },
+    { re: /(^|\s)ү\s*дугаар|үл\s*хөдлөх.*дугаар/, key: "propertyNumber" },
+    { re: /хүүхдийн\s*регистр/, key: "childRegnum" },
   ];
+  const SELF = /өөрт|өөрий|өөрөө/, CHILD = /хүүхд/;
 
   function setValue(el, value) {
     const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -98,25 +105,77 @@
     el.dispatchEvent(new Event("blur", { bubbles: true }));
   }
 
-  async function fillForm(fill) {
+  // Маягтын «Жишээ нь: …» текст
+  const example = it => (it.querySelector(".ant-form-item-extra")?.innerText.match(/жишээ нь:\s*(.+)$/im) || [])[1]?.trim() || null;
+
+  // ХУР-аас хэрэглэгчийн өөрийн мэдээлэл (хуудсанд л ашиглана, хаашаа ч илгээхгүй)
+  async function xypList(serviceCode) {
+    const token = decodeURIComponent(document.cookie.match(/(?:^|;\s*)auth-token=([^;]+)/)?.[1] || "");
+    try {
+      const j = await (await fetch("/api/routes/xyp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Accept-Language": "mn", "X-Auth-Token": token },
+        body: JSON.stringify({ target: "xyp-data", params: { serviceCode, sid: null } }),
+      })).json();
+      const d = j?.data || {};
+      return d.listData || d.list || d.children || (Array.isArray(d) ? d : []);
+    } catch { return []; }
+  }
+  // Үл хөдлөх хөрөнгийн улсын бүртгэлийн дугаар. Утгыг өөрчлөхгүй (кирилл «у»-тай нь маягт хүлээж авдаг — туршсан).
+  // Олон хөрөнгөтэй бол аль нь болохыг хэрэглэгч сонгоно.
+  async function propertyNumber() {
+    const list = await xypList("WS100202_getPropertyList");
+    return list.length === 1 ? String(list[0].propertyNationRegisterNumber || "") || null : null;
+  }
+  // Хүүхдийн регистрийн дугаар: яг нэг хүүхэдтэй үед л. (Туршсан бүртгэлд хүүхэд бүртгэлгүй байсан тул талбарын нэрийг
+  // ХУР-ын түгээмэл нэршлээр таамагласан — олдохгүй бол хэрэглэгч өөрөө бөглөнө.)
+  async function childRegnum() {
+    const list = await xypList("WS100120_childrenInfo");
+    const v = list.length === 1 && (list[0].regnum || list[0].registerNumber || list[0].childRegnum);
+    return v ? String(v) : null;
+  }
+
+  function pickRadio(group, subject) {
+    const opts = [...group.querySelectorAll(".ant-radio-wrapper")].filter(visible);
+    if (opts.length === 1) return opts[0];
+    const hits = opts.filter(o => (subject === "child" ? CHILD : SELF).test(norm(o.innerText)));
+    return hits.length === 1 ? hits[0] : null;
+  }
+
+  async function fillForm(fill = {}) {
     const main = document.querySelector("main") || document.body;
-    const items = [...main.querySelectorAll(".ant-form-item")].filter(visible);
     const filled = [], missing = [], seen = [];
+    const labelOf = el => norm(el?.querySelector(".ant-form-item-label")?.innerText).replace(/[:*]/g, "").trim();
+
+    for (const g of [...main.querySelectorAll(".ant-radio-group")].filter(visible)) {
+      const label = labelOf(g.closest(".ant-form-item")) || "сонголт";
+      seen.push(`${label}(radio)`);
+      if (g.querySelector(".ant-radio-wrapper-checked")) continue;
+      const opt = pickRadio(g, fill.subject);
+      if (opt) { opt.click(); filled.push(label); await sleep(500); }
+      else missing.push(label);
+    }
+
+    const items = [...main.querySelectorAll(".ant-form-item")].filter(visible);
     for (const it of items) {
-      const label = norm(it.querySelector(".ant-form-item-label")?.innerText).replace(/[:*]/g, "").trim();
+      if (it.querySelector(".ant-radio-group")) continue; // дээр сонгосон
+      const label = labelOf(it);
       const required = !!it.querySelector(".ant-form-item-required");
       const el = it.querySelector("textarea, input:not([type=hidden]):not([type=checkbox]):not([type=radio])");
       const kind = it.querySelector(".ant-select") ? "select" : it.querySelector(".ant-picker") ? "date" : el ? el.tagName.toLowerCase() : "other";
       seen.push(`${label || "?"}(${kind}${required ? ",*" : ""})`);
       if (el && el.value && !/^\s*$/.test(el.value)) continue; // аль хэдийн бөглөгдсөн
       const rule = RULES.find(r => r.re.test(label));
-      const value = rule && fill?.[rule.key];
+      let value = rule && fill[rule.key];
+      if (rule?.key === "addressee" && !value) value = example(it);
+      if (rule?.key === "propertyNumber" && !value) value = await propertyNumber();
+      if (rule?.key === "childRegnum" && !value) value = await childRegnum();
       if (el && (kind === "input" || kind === "textarea") && value) { setValue(el, String(value)); filled.push(label); }
       else if (required) missing.push(label || "нэргүй талбар");
     }
     await sleep(400);
     const errors = [...main.querySelectorAll(".ant-form-item-explain-error")].filter(visible).map(e => e.innerText.trim()).filter(Boolean);
-    return { filled, missing, errors, seen, hasForm: items.length > 0 };
+    return { filled, missing, errors, seen, hasForm: seen.length > 0 };
   }
 
   chrome.runtime.onMessage.addListener((msg, _s, reply) => {
