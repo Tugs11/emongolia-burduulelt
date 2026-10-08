@@ -1,4 +1,4 @@
-import { SOURCES } from "./sources.js";
+import { SOURCES, buildSources } from "./sources.js";
 import { redact, diff, putSnapshot, previousSnapshot, trimForAi, shape } from "./lib.js";
 import { summarize, summarizeGemini } from "./ai.js";
 import { SERVICE_URL } from "./config.js";
@@ -51,13 +51,13 @@ $("refresh").onclick = async () => {
     const [tab] = await chrome.tabs.query({ url: "https://e-mongolia.mn/*" });
     if (!tab) throw new Error("e-Mongolia таб нээлттэй алга. «e-Mongolia нээх» дарж нэвтэрнэ үү.");
     await chrome.scripting.executeScript({ target: { tabId: tab.id }, files: ["content.js"] });
-    const res = await chrome.tabs.sendMessage(tab.id, { type: "COLLECT", sources: SOURCES });
+    const res = await chrome.tabs.sendMessage(tab.id, { type: "COLLECT", sources: buildSources() });
     if (res?.error === "NOT_LOGGED_IN") throw new Error("e-Mongolia-д нэвтрээгүй байна (эсвэл session дууссан). Дахин нэвтэрнэ үү.");
 
     const snap = { takenAt: new Date().toISOString(), data: {}, status: {} };
     for (const s of SOURCES) {
       const r = res.results[s.id];
-      snap.status[s.id] = r.ok ? { ok: true } : { ok: false, error: r.error };
+      snap.status[s.id] = r.ok ? { ok: true, note: r.note } : { ok: false, error: r.error };
       if (r.ok) snap.data[s.id] = redact(r.data); // хувийн танигдах мэдээллийг хадгалахаас өмнө хасна
     }
     const { snapshots = {} } = await chrome.storage.local.get("snapshots");
@@ -79,7 +79,7 @@ function aiPayload() {
   return {
     today: today(),
     previousSnapshotDate: state.prevTakenAt?.slice(0, 10) || null,
-    sources: SOURCES.filter(s => s.id in state.snap.data).map(s => ({ name: s.name, data: trimForAi(state.snap.data[s.id]) })),
+    sources: SOURCES.filter(s => s.id in state.snap.data).map(s => ({ name: s.name, data: trimForAi(state.snap.data[s.id]) ?? state.snap.status[s.id]?.note ?? null })),
     unavailable: SOURCES.filter(s => !(s.id in state.snap.data)).map(s => s.name),
     changesSincePreviousMonth: state.changes ? state.changes.slice(0, 80) : null,
   };
@@ -138,7 +138,7 @@ function render() {
     ? `<div class="muted">Сүүлд татсан: ${esc(snap.takenAt.slice(0, 16).replace("T", " "))}</div>` +
       SOURCES.map(s => {
         const st = snap.status[s.id];
-        const detail = st?.ok ? shape(snap.data[s.id]) : st?.error;
+        const detail = !st ? "шалгаагүй" : !st.ok ? st.error : st.note ? `мэдээлэл алга (${st.note})` : shape(snap.data[s.id]);
         return `<div>${st?.ok ? `<span class="ok">✓</span>` : `<span class="err">✗</span>`} ${esc(s.name)} <span class="muted" style="font-size:11px">${esc(detail)}</span></div>`;
       }).join("")
     : "";

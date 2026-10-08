@@ -24,22 +24,25 @@ worker/ (Cloudflare, Claude): /summarize — бусдад тараах үед ke
 
 Эдгээрийг e-Mongolia сайтын JS-ээс олсон. «Миний мэдээлэл» хэсэг ХУР-ын эдгээр сервисийг дууддаг. Жагсаалт нь [extension/sources.js](extension/sources.js)-д байна:
 
-| Мэдээлэл | ХУР сервис |
-|---|---|
-| Эрүүл мэндийн даатгал | `WS300101_getInsuranceFee` |
-| НДШ | `WS100501_getCitizenSalaryInfo` |
-| Тээврийн хэрэгслийн торгууль | `WS100403_getVehiclePenaltyList` |
-| Төлөгдөөгүй нэхэмжлэх | `WS100439_unpaidInvoiceInfo` |
-| Зээл | `WS100831_citizenLoanInfo` |
-| Тээврийн хэрэгсэл | `WS100406_getCitizenVehicleList` |
-| Албан журмын даатгал | `WS100458_MandatoryInsuranceShortList` |
-| Иргэний үнэмлэх | `WS100101_getCitizenIDCardInfo` |
-| Гадаад паспорт | `WS100110_passportInfo` |
-| Үл хөдлөх хөрөнгө | `WS100202_getPropertyList` |
+| Мэдээлэл | ХУР сервис | Параметр (`customFields`) |
+|---|---|---|
+| Эрүүл мэндийн даатгал | `WS300101_getInsuranceFee` | — |
+| НДШ | `WS100501_getCitizenSalaryInfo` | `startYear` (өнгөрсөн он), `endYear` (энэ он), `reason` |
+| Төлөгдөөгүй нэхэмжлэх | `WS100439_unpaidInvoiceInfo` | — |
+| Зээл | `WS100831_citizenLoanInfo` | — |
+| Тээврийн хэрэгсэл | `WS100406_getCitizenVehicleList` | — |
+| Тээврийн хэрэгслийн торгууль | `WS100403_getVehiclePenaltyList` | машин бүрээр `plateNumber` |
+| Тээврийн хэрэгслийн оношилгоо | `WS100409_getVehicleInspectionInfo` | машин бүрээр `cabinNumber` |
+| Албан журмын даатгал | `WS100458_MandatoryInsuranceShortList` | — |
+| Иргэний үнэмлэх | `WS100101_getCitizenIDCardInfo` | — |
+| Гадаад паспорт | `WS100110_passportInfo` | — |
+| Үл хөдлөх хөрөнгө | `WS100202_getPropertyList` | — |
 
-Хүсэлтийн хэлбэр: `POST /api/routes/xyp`, header нь `X-Auth-Token: <auth-token cookie>`, body нь `{ "target": "xyp-data", "params": { "serviceCode": "...", "sid": null } }`.
+Хүсэлтийн хэлбэр нь `POST /api/routes/xyp`:
+- header: `X-Auth-Token: <auth-token cookie>`
+- body: `{ "target": "xyp-data", "params": { "serviceCode": "...", "sid": null, "customFields": {...} } }`
 
-**Анхаарах:** эдгээр сервисийг бодит нэвтэрсэн session дээр хараахан туршаагүй. Зарим нь нэмэлт параметр (жишээ нь улсын дугаар) шаардаж магадгүй. Side panel-д сервис бүрийн ✓ / ✗ төлөв харагдана.
+Сайт өөрөө `customFields`-д `regnum` илгээдэг. Гэхдээ сервер үүнийг token-оос авдаг тул илгээх шаардлагагүй. Хариуны `resultCode: 1` нь «олдсонгүй», өөрөөр хэлбэл мэдээлэл бүртгэлгүй гэсэн утгатай. Параметрүүдийг сайтын `my-info-government/*` хуудасны JS-ээс олсон. 2026-10-07-нд нэвтэрсэн session дээр шалгахад 11 эх сурвалж бүгд амжилттай ажилласан. Харин машин бүрээр дуудах хэсгийг машин бүртгэлгүй бүртгэл дээр бодитоор туршиж чадаагүй.
 
 ## Ажиллуулах
 
@@ -85,8 +88,8 @@ npx wrangler deploy                      # → https://minii-medeelel-ai.<нэр
 
 ## Дараагийн алхам
 
-- [x] Нэвтэрсэн session дээр шалгасан (2026-10-07): 10 сервисээс 8 нь ажиллаж байна.
-- [ ] НДШ (`WS100501`) «алдаатай хүсэлт», торгууль (`WS100403`) «хүсэлт амжилтгүй» гэж буцааж байна. Нэмэлт параметр шаарддаг бололтой.
+- [x] Нэвтэрсэн session дээр шалгасан (2026-10-07): 11 сервис бүгд ажиллаж байна. НДШ-д он, торгууль болон оношилгоонд машин бүрийн дугаар шаардлагатай.
+- [ ] Машинтай бүртгэл дээр торгууль, оношилгоог бодитоор шалгах.
 - [ ] Чухал анхааруулгуудыг (шинэ торгууль, төлөгдөөгүй ЭМД, дуусах бичиг баримт) AI-аас гадна кодоор давхар шалгах.
 - [ ] Хэтэвчийн нэхэмжлэх болон e-Mongolia-ийн мэдэгдлийг нэмэх.
 - [ ] Сар бүр сануулах (`chrome.alarms`).

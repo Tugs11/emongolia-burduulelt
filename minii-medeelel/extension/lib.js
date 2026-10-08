@@ -8,6 +8,7 @@ const SECRET_KEY = new RegExp([
   "birth|gender|sex$|nationality|ethnic",                                         // хувийн шинж
   "address|aimag|soum|district|khoroo|street|apartment|bair|toot|door",          // хаяг
   "phone|mobile|email|image|photo|picture|base64|signature",                     // холбоо барих, зураг
+  "cabin|vin$|chassis|engine.?n|serial",                                         // тээврийн хэрэгслийн арлын дугаар
   "passport.?n|document.?n|card.?n|account.?n|iban|token",                        // баримт, дансны дугаар
 ].join("|"), "i");
 const REGNUM = /[А-ЯӨҮ]{2}\d{8}/g;            // регистрийн дугаар
