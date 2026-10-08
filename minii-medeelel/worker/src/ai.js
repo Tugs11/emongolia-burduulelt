@@ -1,13 +1,13 @@
-// AI хураангуйн нэгдсэн логик: prompt ба JSON schema нь бүх үйлчилгээнд ижил.
-//  - Google Gemini (үнэгүй хувилбар): summarizeGemini — REST generateContent
-//  - Claude (төлбөртэй): summarize — @anthropic-ai/sdk (Worker-т npm-ээс, extension-д vendor/anthropic.js-ээс)
+// AI-ийн логик: хоёр даалгавар (TASKS) — хураангуй (summary) ба асуулт-хариулт (chat).
+//  - Google Gemini: runGemini — REST generateContent, завгүй/гацсан үед өөр загвар руу шилжинэ
+//  - Claude: runClaude — @anthropic-ai/sdk (ANTHROPIC_API_KEY тохируулсан үед)
 
 export const MODEL = "claude-opus-5-5";
 // Үнэгүй хувилбартай загварууд (ai.google.dev/gemini-api/docs/pricing, 2026-10-07). Тогтвортой нь эхэндээ;
 // нэг нь завгүй / гацсан бол дараагийнх руу шилжинэ (2026-10-07: 3.8-flash ачааллаас болж 100+ сек гацаж байв).
 export const GEMINI_MODELS = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-2.5-flash", "gemini-3.5-flash-lite"];
 
-export const SYSTEM = `Чи Монгол иргэнд e-Mongolia (ХУР)-аас авсан өөрийнх нь төрийн мэдээллийг ойлгомжтой тайлбарладаг туслах.
+const SUMMARY_SYSTEM = `Чи Монгол иргэнд e-Mongolia (ХУР)-аас авсан өөрийнх нь төрийн мэдээллийг ойлгомжтой тайлбарладаг туслах.
 Оролт нь JSON: today (өнөөдрийн огноо), sources (эх сурвалж бүрийн ХУР-ын түүхий өгөгдөл), unavailable (татаж чадаагүй эх сурвалж),
 changesSincePreviousMonth (өмнөх сарын агшинтай кодоор харьцуулсан ялгаа: added / removed / changed, эсвэл null).
 
@@ -25,7 +25,7 @@ changesSincePreviousMonth (өмнөх сарын агшинтай кодоор �
 Дүрэм: зөвхөн өгөгдсөн өгөгдөлд тулгуурла, дүн, огноо зохиож болохгүй. Өдрийн тоог today-оос тооцоол.
 Талбарын утга тодорхойгүй бол таамаглахгүй, товч дурд. Монгол хэлээр, богино, энгийн бич. Хувийн танигдах мэдээлэл бичихгүй.`;
 
-export const SCHEMA = {
+const SUMMARY_SCHEMA = {
   type: "object",
   properties: {
     headline: { type: "string" },
@@ -58,8 +58,85 @@ export const SCHEMA = {
   additionalProperties: false,
 };
 
+const CHAT_SYSTEM = `Чи Монгол иргэнд e-Mongolia (ХУР)-аас авсан өөрийнх нь төрийн мэдээлэлд тулгуурлан асуултад хариулдаг туслах.
+Оролт нь JSON: today, question (одоогийн асуулт), history (өмнөх яриа), data (татсан мэдээлэл: sources, unavailable),
+summary (өмнө гаргасан хураангуй), services (асуулттай холбоотой байж болох e-Mongolia үйлчилгээнүүдийн нэрс).
+
+- data-д байгаа мэдээллээр л хариул. Дүн, огноо, тоо зохиож болохгүй. Өдрийн тоог today-оос тооцоол.
+- Асуусан мэдээлэл data-д байхгүй бол (жишээ нь цэргийн алба, боловсрол) үүнийг шууд хэл: «энэ мэдээлэл татагдаагүй».
+  Дараа нь services-ээс асуултад тохирохыг (хамгийн ихдээ 3) services талбарт нэрийг нь яг адилхан бичиж санал болго.
+  Тохирох нь байхгүй бол services-ийг хоосон үлдээ.
+- data-д байгаа асуултад services хэрэггүй бол хоосон үлдээ.
+- e-Mongolia-аас өөр систем, апп, банк, вэбсайтын нэр бүү зохио. Хувийн танигдах мэдээлэл бичихгүй.
+- Монгол хэлээр, товч, ойлгомжтой хариул.
+- Хэрэглэгч бичиг баримт бүрдүүлэхийг хүсвэл (жишээ нь гадаад улсын виз мэдүүлэх, сургууль, ажилд орох, зээл авах)
+  intent="documents" гэж тэмдэглэ. purpose-д зорилгыг товч бич (жишээ нь «Өмнөд Солонгосын жуулчны виз»).
+  answer-т «… бичиг баримтын жагсаалтыг бэлдлээ» гэх мэт нэг өгүүлбэр бич. Энэ үед services хоосон байна.
+  Бусад бүх үед intent="answer", purpose="".`;
+
+const CHAT_SCHEMA = {
+  type: "object",
+  properties: {
+    answer: { type: "string" },
+    services: { type: "array", items: { type: "string" } },
+    intent: { type: "string", enum: ["answer", "documents"] },
+    purpose: { type: "string" },
+  },
+  required: ["answer", "services", "intent", "purpose"],
+  additionalProperties: false,
+};
+
+const PLAN_SYSTEM = `Чи Монгол иргэнд гадаад улсын виз мэдүүлэх болон бусад зорилгоор бичиг баримт бүрдүүлэхэд тусалдаг.
+Оролт нь JSON: today, purpose (зорилго), question (хэрэглэгчийн бичсэн), emongoliaServices (e-Mongolia-оос шууд PDF-ээр авч болох лавлагаа, тодорхойлолтын нэрс).
+
+Монгол иргэнд энэ зорилгоор ихэвчлэн шаардагддаг бичиг баримтын жагсаалтыг гарга. Мөр бүрт:
+- e-Mongolia-оос лавлагаагаар авч болох бол source="emongolia", service-д emongoliaServices-ээс ЯГ тохирох нэрийг үсэг алдалгүй бич.
+  Гадаад улсад өгөх тул «(гадаад хэлээр)» хувилбар байвал түүнийг сонго. Жагсаалтад тохирох нэр байхгүй бол source="self".
+- Үгүй бол source="self", service="". note-д хаанаас, яаж бэлдэхийг товч бич (жишээ нь «Банкнаасаа сүүлийн 6 сарын хуулга авна»).
+- label нь хүнд ойлгомжтой богино нэр. note нь хэрэгтэй бол (жишээ нь зургийн хэмжээ), үгүй бол "".
+Зохиомол шаардлага нэмэхгүй. Тодорхой бус шаардлагын note-д «элчин сайдын яамнаас шалгана уу» гэж бич.
+Визийн төрөл тодорхойгүй бол хамгийн түгээмэл төрлөөр гаргаад, энэ тухайгаа tips-д дурд.
+e-Mongolia-ийн лавлагаа авахад маягт бөглөдөг тул:
+- addressee: бичиг баримтыг хаана өгөх, «Хаана зориулж» талбарт бичих текст (жишээ нь «БНСУ-ын Элчин сайдын яаманд»).
+- years: Нийгмийн даатгалын лавлагаа мэт хугацааны интервал сонгодог лавлагаанд энэ зорилгод хэдэн жилийн мэдээлэл
+  шаардагддагийг бүхэл тоогоор бич (ихэвчлэн 1; тодорхойгүй бол 1). Бусад бүх мөрөнд 0.
+title: жагсаалтын гарчиг. tips: богино зөвлөмжүүд (хамгийн ихдээ 4). Зардал, хугацааг тодорхой мэдэхгүй бол бүү бич.
+Монгол хэлээр бич. e-Mongolia-аас өөр сайт, апп, байгууллагын холбоос бүү зохио.`;
+
+const PLAN_SCHEMA = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    addressee: { type: "string" },
+    items: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          label: { type: "string" },
+          source: { type: "string", enum: ["emongolia", "self"] },
+          service: { type: "string" },
+          note: { type: "string" },
+          years: { type: "integer" },
+        },
+        required: ["label", "source", "service", "note", "years"],
+        additionalProperties: false,
+      },
+    },
+    tips: { type: "array", items: { type: "string" } },
+  },
+  required: ["title", "addressee", "items", "tips"],
+  additionalProperties: false,
+};
+
+export const TASKS = {
+  summary: { system: SUMMARY_SYSTEM, schema: SUMMARY_SCHEMA },
+  chat: { system: CHAT_SYSTEM, schema: CHAT_SCHEMA },
+  plan: { system: PLAN_SYSTEM, schema: PLAN_SCHEMA },
+};
+
 // Амжилттай бол { ok: true, data }, алдаа гарвал { ok: false, status, message } буцаана
-export async function summarize(Anthropic, client, payload) {
+export async function runClaude(Anthropic, client, task, payload) {
   try {
     const msg = await client.beta.messages.create({
       model: MODEL,
@@ -67,8 +144,8 @@ export async function summarize(Anthropic, client, payload) {
       // Аюулгүй байдлын шүүлтүүр татгалзвал Anthropic-ийн санал болгосон загвар руу автоматаар шилжинэ
       betas: ["server-side-fallback-2026-07-01"],
       fallbacks: "default",
-      output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA } },
-      system: SYSTEM,
+      output_config: { effort: "medium", format: { type: "json_schema", schema: task.schema } },
+      system: task.system,
       messages: [{ role: "user", content: JSON.stringify(payload) }],
     });
     if (msg.stop_reason === "refusal") return { ok: false, status: 422, message: "AI хариулахаас татгалзлаа" };
@@ -85,15 +162,15 @@ export async function summarize(Anthropic, client, payload) {
   }
 }
 
-// Google Gemini API (aistudio.google.com-ийн үнэгүй key). Үр дүн нь summarize()-тэй ижил хэлбэртэй.
+// Google Gemini API. Үр дүн нь runClaude()-тэй ижил хэлбэртэй.
 // Загвар завгүй (503) эсвэл хязгаарт хүрсэн (429) бол түр хүлээгээд, дараа нь өөр загвар руу шилжинэ.
-export async function summarizeGemini(apiKey, payload, onProgress = () => {}) {
+export async function runGemini(apiKey, task, payload, onProgress = () => {}) {
   const sleep = ms => new Promise(r => setTimeout(r, ms));
   let last = null;
   for (const model of GEMINI_MODELS) {
     for (let attempt = 0; attempt < 2; attempt++) {
       onProgress(attempt ? `${model} завгүй байна, дахин оролдож байна…` : `${model} хураангуйлж байна…`);
-      const r = await callGemini(apiKey, payload, model);
+      const r = await callGemini(apiKey, task, payload, model);
       if (r.ok) return { ...r, model };
       last = r;
       if (!r.retry) return r;                    // key буруу, байршил дэмжигдэхгүй гэх мэт — өөр загвар тус болохгүй
@@ -104,14 +181,14 @@ export async function summarizeGemini(apiKey, payload, onProgress = () => {}) {
   return { ...last, message: "Gemini-ийн бүх үнэгүй загвар одоогоор завгүй байна. Хэдэн минутын дараа дахин оролдоно уу. (" + last.message + ")" };
 }
 
-// Хураангуй хийхэд гүн бодолт хэрэггүй тул хурдыг нэмэхийн тулд бууруулна.
+// Хураангуй, богино хариултад гүн бодолт хэрэггүй тул хурдыг нэмэхийн тулд бууруулна.
 // Gemini 3.x нь thinkingLevel, 2.5 нь thinkingBudget ашигладаг (2.5-flash-д 0 = бодолтгүй).
 const thinkingFor = model => (/^gemini-2\./.test(model) ? { thinkingBudget: 0 } : { thinkingLevel: "low" });
 
 // Загвар хэт ачаалалтай үед хариу өгөхгүй 100+ секунд гацдаг тул хүлээлтийг хязгаарлаж, өөр загвар руу шилжинэ
 const GEMINI_TIMEOUT_MS = 35_000;
 
-async function callGemini(apiKey, payload, model) {
+async function callGemini(apiKey, task, payload, model) {
   let r;
   try {
     r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -119,9 +196,9 @@ async function callGemini(apiKey, payload, model) {
       signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
       headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
-        systemInstruction: { parts: [{ text: SYSTEM }] },
+        systemInstruction: { parts: [{ text: task.system }] },
         contents: [{ role: "user", parts: [{ text: JSON.stringify(payload) }] }],
-        generationConfig: { responseMimeType: "application/json", responseJsonSchema: SCHEMA, thinkingConfig: thinkingFor(model) },
+        generationConfig: { responseMimeType: "application/json", responseJsonSchema: task.schema, thinkingConfig: thinkingFor(model) },
       }),
     });
   } catch (e) {

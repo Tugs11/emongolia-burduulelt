@@ -8,13 +8,13 @@ compatibility_flags = ["nodejs_compat"]
 [placement]
 region = "gcp:us-central1"
 
-# IP тус бүрт минутад 5 хүсэлт (Cloudflare байршил бүрт тусдаа, ойролцоо тоолол)
+# IP тус бүрт минутад 10 хүсэлт (хураангуй + chat) (Cloudflare байршил бүрт тусдаа, ойролцоо тоолол)
 [[ratelimits]]
 name = "RATE_LIMITER"
 namespace_id = "1001"
 
   [ratelimits.simple]
-  limit = 5
+  limit = 10
   period = 60
 
 # Нууц утгууд (кодонд бичихгүй), аль нэгийг нь тохируулна:

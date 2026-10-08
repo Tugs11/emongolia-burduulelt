@@ -42,7 +42,8 @@
     (async () => {
       if (!token()) return reply({ error: "NOT_LOGGED_IN" });
       const results = {};
-      for (const s of msg.sources) {
+      for (const [i, s] of msg.sources.entries()) {
+        chrome.runtime.sendMessage({ type: "PROGRESS", done: i, total: msg.sources.length, name: s.name }).catch(() => {});
         try {
           results[s.id] = s.perVehicle ? await perVehicle(s, results.vehicles) : await xyp(s.serviceCode, s.customFields);
         } catch (e) { results[s.id] = { ok: false, error: String(e) }; }

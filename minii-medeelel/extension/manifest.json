@@ -2,17 +2,16 @@
   "manifest_version": 3,
   "name": "Миний мэдээлэл AI — e-Mongolia",
   "version": "0.1.0",
-  "description": "e-Mongolia-д нэвтэрсэн үед ЭМД, НДШ, торгууль зэрэг мэдээллээ нэг дор харж, өмнөх сартай харьцуулж, AI-аар хураангуйлна.",
+  "description": "e-Mongolia-д нэвтэрсэн үед ЭМД, НДШ, зээл зэрэг мэдээллээ AI-аар хураангуйлж, асуулт асууж, виз зэрэгт шаардлагатай бичиг баримтаа цуглуулна.",
   "permissions": [
     "sidePanel",
     "tabs",
     "scripting",
-    "storage"
+    "storage",
+    "downloads"
   ],
   "host_permissions": [
     "https://e-mongolia.mn/*",
-    "https://generativelanguage.googleapis.com/*",
-    "https://api.anthropic.com/*",
     "https://*.workers.dev/*"
   ],
   "background": {
