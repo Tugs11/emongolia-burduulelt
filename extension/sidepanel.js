@@ -171,8 +171,15 @@ async function buildPlan(p) {
     if (match || d.candidates.length) em.push(d);
     else self.push({ label: it.label, note: it.note || "e-Mongolia-оос олдсонгүй — өөрөө авна", done: false });
   }
-  return { title: p.title, folder: p.title, addressee: p.addressee || "", em, self, tips: p.tips || [] };
+  return {
+    title: p.title, folder: p.title, addressee: p.addressee || "", em, self, tips: p.tips || [],
+    language: LANGUAGES.includes(p.language) ? p.language : "англи", addresseeForeign: p.addresseeForeign || "",
+  };
 }
+
+// Гадаад хэлээр лавлагааны «Хэл сонгох» талбарт сонгох хэл. AI зорилгоос нь сонгоно, хэрэглэгч жагсаалт дээрээс сольж болно.
+const LANGUAGES = ["англи", "орос", "хятад", "япон", "солонгос", "герман", "франц"];
+const isForeign = d => /гадаад хэл/i.test(d.match?.title || "");
 
 // Хэрэглэгчийн сонголтыг санана: дараагийн удаа ижил мөрөнд автоматаар ашиглана
 async function choose(d, c) {
@@ -201,7 +208,7 @@ const rerender = plan => (plan === listPlan ? renderList() : renderChat());
 
 async function collectOne(plan, d, i) {
   d.state = "run"; rerender(plan);
-  const item = { ...d.match, fill: { years: d.years, addressee: plan.addressee, subject: d.subject } };
+  const item = { ...d.match, fill: { years: d.years, addressee: plan.addressee, addresseeForeign: plan.addresseeForeign, subject: d.subject, language: plan.language } };
   const r = await chrome.runtime.sendMessage({ type: "COLLECT_DOC", item, index: i, folder: plan.folder });
   Object.assign(d, { state: r?.ok ? "done" : r?.error || "алдаа", detail: r?.detail, downloadId: r?.downloadId, url: r?.url });
   if (r?.ok && r.dataUrl) pdfs.set(d, r.dataUrl);
@@ -287,6 +294,9 @@ function planHtml(plan, mi) {
   return `<div class="plan">
     <div style="font-weight:600;margin:8px 0 4px">${esc(plan.title)}</div>
     <div class="small muted">e-Mongolia-оос цуглуулах (${done.length}/${todo.length})${plan.addressee ? ` · «Хаана зориулж»: ${esc(plan.addressee)}` : ""}:</div>
+    ${plan.em.some(isForeign) ? `<div class="small muted" style="margin:4px 0">Гадаад хэлээр лавлагааны хэл:
+      <select data-act="lang" data-m="${mi}" ${plan.running ? "disabled" : ""}>${LANGUAGES.map(l => `<option value="${l}" ${l === (plan.language || "англи") ? "selected" : ""}>${l[0].toUpperCase() + l.slice(1)}</option>`).join("")}</select>
+      <span>(e-Mongolia-д байхгүй бол англи)</span></div>` : ""}
     ${plan.em.map((d, i) => docHtml(plan, d, i, mi)).join("")}
     <div class="row" style="margin-top:6px">
       ${todo.length && done.length < todo.length ? `<button type="button" class="mini" data-act="collect" data-m="${mi}" ${plan.running ? "disabled" : ""}>${plan.running ? "Цуглуулж байна…" : `Цуглуулах (${todo.length - done.length})`}</button>` : ""}
@@ -325,10 +335,11 @@ async function onPlanClick(e) {
 }
 
 async function onPlanChange(e) {
-  const c = e.target.closest("input[data-act]");
+  const c = e.target.closest("input[data-act], select[data-act]");
   if (!c) return;
   const plan = planOf(c.dataset.m);
   if (!plan) return;
+  if (c.dataset.act === "lang") plan.language = c.value;
   if (c.dataset.act === "skip") plan.em[+c.dataset.i].skip = !c.checked;
   if (c.dataset.act === "tick") plan.self[+c.dataset.i].done = c.checked;
   if (c.dataset.act === "search") {

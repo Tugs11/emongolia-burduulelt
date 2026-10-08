@@ -88,9 +88,14 @@ async function collect(item, index, folder) {
   if (meta.duration && !/шууд/.test(meta.duration)) return { ok: false, error: "NOT_INSTANT", url };
 
   pendingName = `${folder ? safeName(folder) + "/" : ""}${String(index + 1).padStart(2, "0")}_${safeName(item.title)}`;
-  // Маягтын утга: НДШ мэт хугацаатай лавлагаанд визийн шаардлагаас тооцсон он, «Хаана зориулж»-д хаана өгөх
+  // Маягтын утга: НДШ мэт хугацаатай лавлагаанд визийн шаардлагаас тооцсон он, «Хаана зориулж»-д хаана өгөх.
+  // Гадаад хэлээр лавлагаанд «Хэл сонгох»-д AI-ийн сонгосон хэл (анхдагч нь англи), «Хаана зориулж»-д тэр хэлээрх хаяг.
   const y = new Date().getFullYear(), years = Math.min(10, Math.max(1, item.fill?.years || 1));
-  const fill = { startYear: y - years, endYear: y, addressee: item.fill?.addressee || "", subject: item.fill?.subject || "self" };
+  const foreign = /гадаад хэл/i.test(item.title);
+  const fill = {
+    startYear: y - years, endYear: y, subject: item.fill?.subject || "self", language: item.fill?.language || "англи",
+    addressee: (foreign && item.fill?.addresseeForeign) || item.fill?.addressee || "",
+  };
   const dl = waitForDownload(90000);
   try {
     return await getPdf(tab.id, dl, fill);

@@ -86,6 +86,7 @@
   //   «Хаана зориулж»          → addressee, ирээгүй бол маягтын «Жишээ нь: …» текст
   //   «Ү дугаар»                → ХУР-аас хэрэглэгчийн үл хөдлөх хөрөнгийн дугаар (ганц хөрөнгөтэй бол)
   //   radio («Хэнд», хүн сонгох) → ганц сонголт, эсвэл «Өөртөө» / «Хүүхдийн»-ийг subject-ээр
+  //   «Хэл сонгох» (гадаад хэлээр лавлагаа; select, radio эсвэл checkbox) → AI-ийн сонгосон хэл, байхгүй бол англи
   // Танихгүй шаардлагатай талбарыг бөглөхгүй — тэр үед хэрэглэгч өөрөө бөглөнө.
   const RULES = [
     { re: /эхлэх\s*(он|огноо)|(^|\s)оноос/, key: "startYear" }, // кирилл үсэгт \b ажилладаггүй
@@ -95,6 +96,44 @@
     { re: /хүүхдийн\s*регистр/, key: "childRegnum" },
   ];
   const SELF = /өөрт|өөрий|өөрөө/, CHILD = /хүүхд/;
+
+  // Гадаад хэлээр лавлагааны хэл: fill.language (жишээ нь «англи») → маягтын сонголтын текст
+  const LANGS = {
+    англи: /англи|english|(^|[^a-z])eng([^a-z]|$)/i, орос: /орос|russian|русск/i, хятад: /хятад|chinese|中文/i,
+    япон: /япон|japanese|日本/i, солонгос: /солонгос|korean|한국/i, герман: /герман|german|deutsch/i, франц: /франц|french|français/i,
+  };
+  const LANG_LABEL = /(^|\s)хэл(\s|$)|хэлээр|хэлний|language/; // «хэлбэр»-ийг оруулахгүй
+  const isLang = t => Object.values(LANGS).some(re => re.test(t));
+  // Хүссэн хэл → англи → ганц сонголт. Олдохгүй бол -1 (хэрэглэгч өөрөө сонгоно)
+  function pickLang(texts, want) {
+    const key = Object.keys(LANGS).find(k => norm(want).includes(k));
+    for (const re of [LANGS[key], LANGS.англи].filter(Boolean)) {
+      const i = texts.findIndex(t => re.test(t));
+      if (i >= 0) return i;
+    }
+    return texts.length === 1 ? 0 : -1;
+  }
+  // Бөглөж чадаагүй сонголтын талбар: сонголтуудыг нь хамт харуулна (юу сонгохыг хэрэглэгч, хөгжүүлэгч харна)
+  const choiceLabel = (label, texts) => texts.length ? `${label} (${texts.slice(0, 6).join(", ")})` : label;
+
+  // Ant Design Select: mousedown-оор нээгээд (onClick-оор) сонголтыг дарна. Dropdown нь body-д тусдаа зурагддаг.
+  async function chooseSelect(it, want) {
+    const box = it.querySelector(".ant-select-selector");
+    if (!box) return { ok: false, options: [] };
+    box.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true }));
+    const dd = await waitFor(() => [...document.querySelectorAll(".ant-select-dropdown")]
+      .find(d => visible(d) && !d.classList.contains("ant-select-dropdown-hidden")), 3000);
+    if (!dd) return { ok: false, options: [] };
+    await sleep(300);
+    const opts = [...dd.querySelectorAll(".ant-select-item-option:not(.ant-select-item-option-disabled)")];
+    const texts = opts.map(o => norm(o.getAttribute("title") || o.innerText));
+    const i = pickLang(texts, want);
+    if (i < 0) { box.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, cancelable: true })); return { ok: false, options: texts }; }
+    opts[i].click();
+    await sleep(400);
+    if (it.querySelector(".ant-select-multiple")) document.activeElement?.blur?.(); // олон сонголттой бол цонхыг хаана
+    return { ok: !!it.querySelector(".ant-select-selection-item"), options: texts };
+  }
 
   function setValue(el, value) {
     const proto = el.tagName === "TEXTAREA" ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
@@ -134,8 +173,7 @@
     return v ? String(v) : null;
   }
 
-  function pickRadio(group, subject) {
-    const opts = [...group.querySelectorAll(".ant-radio-wrapper")].filter(visible);
+  function pickRadio(opts, subject) {
     if (opts.length === 1) return opts[0];
     const hits = opts.filter(o => (subject === "child" ? CHILD : SELF).test(norm(o.innerText)));
     return hits.length === 1 ? hits[0] : null;
@@ -146,23 +184,45 @@
     const filled = [], missing = [], seen = [];
     const labelOf = el => norm(el?.querySelector(".ant-form-item-label")?.innerText).replace(/[:*]/g, "").trim();
 
-    for (const g of [...main.querySelectorAll(".ant-radio-group")].filter(visible)) {
-      const label = labelOf(g.closest(".ant-form-item")) || "сонголт";
-      seen.push(`${label}(radio)`);
-      if (g.querySelector(".ant-radio-wrapper-checked")) continue;
-      const opt = pickRadio(g, fill.subject);
+    for (const g of [...main.querySelectorAll(".ant-radio-group, .ant-checkbox-group")].filter(visible)) {
+      const radio = g.matches(".ant-radio-group");
+      const item = g.closest(".ant-form-item");
+      const label = labelOf(item) || "сонголт";
+      seen.push(`${label}(${radio ? "radio" : "checkbox"})`);
+      if (g.querySelector(".ant-radio-wrapper-checked, .ant-checkbox-wrapper-checked")) continue;
+      const opts = [...g.querySelectorAll(".ant-radio-wrapper, .ant-checkbox-wrapper")].filter(visible);
+      const texts = opts.map(o => norm(o.innerText));
+      const opt = LANG_LABEL.test(label) || texts.filter(isLang).length >= 2 ? opts[pickLang(texts, fill.language)]
+        : radio ? pickRadio(opts, fill.subject) : null;
       if (opt) { opt.click(); filled.push(label); await sleep(500); }
-      else missing.push(label);
+      else if (radio || item?.querySelector(".ant-form-item-required")) missing.push(choiceLabel(label, texts));
     }
 
     const items = [...main.querySelectorAll(".ant-form-item")].filter(visible);
     for (const it of items) {
-      if (it.querySelector(".ant-radio-group")) continue; // дээр сонгосон
+      if (it.querySelector(".ant-radio-group, .ant-checkbox-group")) continue; // дээр сонгосон
       const label = labelOf(it);
       const required = !!it.querySelector(".ant-form-item-required");
       const el = it.querySelector("textarea, input:not([type=hidden]):not([type=checkbox]):not([type=radio])");
-      const kind = it.querySelector(".ant-select") ? "select" : it.querySelector(".ant-picker") ? "date" : el ? el.tagName.toLowerCase() : "other";
+      const native = it.querySelector("select");
+      const kind = it.querySelector(".ant-select") ? "select" : it.querySelector(".ant-picker") ? "date" : native ? "native-select" : el ? el.tagName.toLowerCase() : "other";
       seen.push(`${label || "?"}(${kind}${required ? ",*" : ""})`);
+      if (kind === "select" || kind === "native-select") {
+        // Сонголтын талбар: зөвхөн «Хэл сонгох»-ыг бөглөнө, бусдыг хэрэглэгч сонгоно
+        if (kind === "select" ? it.querySelector(".ant-select-selection-item") : native.value) continue; // аль хэдийн сонгогдсон
+        if (!LANG_LABEL.test(label)) { if (required) missing.push(label || "нэргүй талбар"); continue; }
+        let r;
+        if (kind === "select") r = await chooseSelect(it, fill.language);
+        else {
+          const texts = [...native.options].map(o => norm(o.text));
+          const i = pickLang(texts, fill.language);
+          if (i >= 0) { native.selectedIndex = i; native.dispatchEvent(new Event("change", { bubbles: true })); }
+          r = { ok: i >= 0, options: texts };
+        }
+        if (r.ok) filled.push(label);
+        else missing.push(choiceLabel(label, r.options));
+        continue;
+      }
       if (el && el.value && !/^\s*$/.test(el.value)) continue; // аль хэдийн бөглөгдсөн
       const rule = RULES.find(r => r.re.test(label));
       let value = rule && fill[rule.key];
