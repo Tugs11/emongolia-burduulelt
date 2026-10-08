@@ -1,14 +1,14 @@
 {
   "manifest_version": 3,
-  "name": "Бүрдүүлэлт AI — e-Mongolia PoC",
-  "version": "0.1.0",
-  "description": "Жагсаалтаа оруулахад нэвтэрсэн e-Mongolia-оос лавлагааг автоматаар татаж, нэг хавтсанд цуглуулна.",
+  "name": "Миний мэдээлэл AI — e-Mongolia",
+  "version": "0.2.0",
+  "description": "e-Mongolia-ийн мэдээллээ AI-аар хураангуйлж, асуулт асууж, бүрдүүлэх бичиг баримтаа нэг ZIP багц болгон цуглуулна.",
   "permissions": [
     "sidePanel",
     "tabs",
     "scripting",
-    "downloads",
-    "storage"
+    "storage",
+    "downloads"
   ],
   "host_permissions": [
     "https://e-mongolia.mn/*",
@@ -23,7 +23,7 @@
     "default_path": "sidepanel.html"
   },
   "action": {
-    "default_title": "Бүрдүүлэлт AI",
+    "default_title": "Миний мэдээлэл AI",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png",

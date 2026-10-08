@@ -1,5 +1,33 @@
-// e-Mongolia-ийн нийтэд нээлттэй үйлчилгээний жагсаалт (~1460): chatbot-ын асуултад тохирох үйлчилгээг санал болгоход.
-// Тааруулалтын код нь «Бүрдүүлэлт AI» (../../extension/services.js)-аас авсан: нөхцөлийн дагавар үл хамаарч үг тааруулна.
+// e-Mongolia-ийн нийтэд нээлттэй үйлчилгээний жагсаалт (~1460): chatbot-ын асуултад тохирох үйлчилгээг санал болгох,
+// бүрдүүлэх жагсаалтын мөрийг бодит үйлчилгээтэй тааруулахад. Нөхцөлийн дагавар үл хамаарч үг тааруулна.
+
+// Түгээмэл бүрдүүлэлтийн мөрийг e-Mongolia дээрх албан ёсны үйлчилгээний нэр рүү хөрвүүлэх зөвлөмж (AI ажиллахгүй үед).
+// Нэрсийг e-Mongolia хайлтын API-аас (2026-10-06) шууд авсан. Энд байхгүй зүйлийг ч каталогоос хайж олно.
+const HINTS = [
+  { keys: ["иргэний үнэмлэх", "үнэмлэхний хуулбар", "үнэмлэхийн хуулбар"], query: "Иргэний үнэмлэхийн лавлагаа" },
+  { keys: ["нийгмийн даатгал", "ндш"], query: "Нийгмийн даатгалын шимтгэл төлөлтийн лавлагаа" },
+  { keys: ["ял шийтгэл", "эрүүгийн", "цагдаагийн тодорхойлолт"], query: "Иргэний эрүүгийн хариуцлага хүлээж байгаа эсэх тухай тодорхойлолт" },
+  { keys: ["оршин суугаа", "хаягийн тодорхойлолт", "хаягийн лавлагаа"], query: "Иргэний оршин суугаа газрын хаягийн бүртгэлийн лавлагаа" },
+  { keys: ["төрсний", "төрсөн гэрчилгээ"], query: "Төрсний бүртгэлийн лавлагаа" },
+  { keys: ["гэрлэсний бүртгэлгүй", "гэрлээгүй"], query: "Гэрлэсний бүртгэлгүй лавлагаа" },
+  { keys: ["гэрлэсний"], query: "Гэрлэсний бүртгэлийн лавлагаа" },
+  { keys: ["диплом", "боловсрол"], query: "Дээд боловсролын сургалтын байгууллагын дипломын тодорхойлолт" },
+  { keys: ["жолооч", "жолоодох эрх"], query: "Жолоочийн лавлагаа, мэдээлэл" },
+];
+
+// e-Mongolia-оос авах боломжгүй, хэрэглэгч өөрөө бэлдэх зүйлс
+const MANUAL = ["цээж зураг", "зураг 3x4", "3х4", "анкет", "өргөдөл", "cv", "намтар", "тодорхойлолт ажлын газраас", "зөвлөмж"];
+
+// AI-гүй задлалт: мөр бүрийг түлхүүр үгээр. Үр дүн нь AI-ийн /parse, /plan-ийн items-тэй ижил хэлбэртэй.
+export function localPlan(text) {
+  return text.split(/[\n,;]+/).map(s => s.replace(/^\s*[\d.)•\-–]+\s*/, "").trim()).filter(Boolean).map(label => {
+    const t = label.toLowerCase();
+    if (MANUAL.some(m => t.includes(m))) return { label, source: "self", service: "", note: "Өөрөө бэлдэнэ (e-Mongolia-д байхгүй)", years: 0, subject: "self" };
+    const h = HINTS.find(h => h.keys.some(k => t.includes(k)));
+    return { label, source: "emongolia", service: h ? h.query : label, note: "", years: 0, subject: "self" };
+  });
+}
+
 const CATALOG_URL = "https://e-mongolia.mn/portal/main-portal/api/content/search?currentPage=0&pageSize=5000&query=";
 const CATALOG_TTL = 24 * 3600 * 1000;
 
@@ -99,12 +127,27 @@ export async function referenceTitles(n = 150) {
   } catch { return []; }
 }
 
+// Итгэлтэй бол шилдгийг нь буцаана, үгүй бол null (хэрэглэгчээс асууна)
+export function confidentPick(ranked) {
+  const [a, b] = ranked;
+  if (!a || a.action || a.score < 0.6) return null;
+  if (b && a.score - b.score < 0.08) return null;
+  return { title: a.title, path: a.path };
+}
+
 // AI-ийн бичсэн үйлчилгээний нэрийг каталогтой тааруулна: яг ижил нэр → шууд, үгүй бол итгэлтэй таарвал
 export async function matchService(name) {
   if (!name) return null;
   const cat = await loadCatalog();
   const exact = cat.find(s => s.title === name);
   if (exact) return { title: exact.title, path: exact.path };
-  const [a, b] = rankCatalog({ query: name }, cat, 2);
-  return a && !a.action && a.score >= 0.6 && (!b || a.score - b.score >= 0.08) ? { title: a.title, path: a.path } : null;
+  return confidentPick(rankCatalog({ query: name }, cat, 2));
 }
+
+// Итгэлтэй таараагүй мөрийн сонголтууд (хэрэглэгч сонгоно): [{ title, path }]
+export async function candidates(item, n = 6) {
+  return rankCatalog(item, await loadCatalog(), n).map(({ title, path }) => ({ title, path }));
+}
+
+// Хэрэглэгчийн өмнө сонгосон тааруулалтыг санах түлхүүр
+export const learnKey = label => words(label).join(" ");

@@ -1,5 +1,24 @@
-name = "burduulelt-parse"
-main = "index.js"
+name = "minii-medeelel-ai"
+main = "src/index.js"
 compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
 
-# API түлхүүрийг: npx wrangler secret put ANTHROPIC_API_KEY
+# Gemini API зарим бүсэд (жишээ нь Hong Kong) дэмжигддэггүй. Монголоос ирсэн хүсэлт ойрын ийм серверт ажиллавал
+# «location is not supported» алдаа гардаг тул Worker-ийг үргэлж Google-ийн US бүсийн ойролцоо ажиллуулна.
+[placement]
+region = "gcp:us-central1"
+
+# IP тус бүрт минутад 10 хүсэлт (хураангуй + chat + жагсаалт) (Cloudflare байршил бүрт тусдаа, ойролцоо тоолол)
+[[ratelimits]]
+name = "RATE_LIMITER"
+namespace_id = "1001"
+
+  [ratelimits.simple]
+  limit = 10
+  period = 60
+
+# Нууц утгууд (кодонд бичихгүй), аль нэгийг нь тохируулна:
+#   npx wrangler secret put GEMINI_API_KEY      # aistudio.google.com-ийн key (давуу эрхтэй)
+#   npx wrangler secret put ANTHROPIC_API_KEY   # эсвэл Claude
+# Зөвхөн өөртөө ашиглах бол (заавал биш):
+#   npx wrangler secret put APP_TOKEN

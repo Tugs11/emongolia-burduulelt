@@ -1,0 +1,39 @@
+# extension/ өөрчлөгдөх бүрт ZIP болгож «extension-latest» release-д байршуулна.
+# Татах холбоос (README, ZAAVAR, танилцуулгын «Extension татах» товч):
+#   https://github.com/Tugs11/emongolia-burduulelt/releases/latest/download/minii-medeelel-ai.zip
+name: Extension ZIP
+
+on:
+  push:
+    branches: [main]
+    paths: ["extension/**", ".github/workflows/extension.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: extension-release
+  cancel-in-progress: true
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Хавтасгүйгээр (manifest.json ZIP-ийн үндсэнд) — Windows-ийн «Extract All» шууд Load unpacked хийх хавтас үүсгэнэ
+      - name: ZIP
+        run: |
+          echo "VERSION=$(jq -r .version extension/manifest.json)" >> "$GITHUB_ENV"
+          cd extension && zip -r -X ../minii-medeelel-ai.zip . -x '.*'
+
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete extension-latest --yes --cleanup-tag || true
+          gh release create extension-latest minii-medeelel-ai.zip \
+            --target "$GITHUB_SHA" --latest \
+            --title "Миний мэдээлэл AI v$VERSION" \
+            --notes "Chrome extension (${GITHUB_SHA::7}). Суулгах: ZIP-ийг задлаад chrome://extensions → Developer mode → Load unpacked → задалсан хавтас. Дэлгэрэнгүй: ZAAVAR.md"

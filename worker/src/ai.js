@@ -1,4 +1,5 @@
-// AI-ийн логик: хоёр даалгавар (TASKS) — хураангуй (summary) ба асуулт-хариулт (chat).
+// AI-ийн логик: даалгаврууд (TASKS) — хураангуй (summary), асуулт-хариулт (chat), зорилгоор бичиг баримтын жагсаалт (plan),
+// байгууллагаас өгсөн жагсаалтыг (текст / зураг) задлах (parse).
 //  - Google Gemini: runGemini — REST generateContent, завгүй/гацсан үед өөр загвар руу шилжинэ
 //  - Claude: runClaude — @anthropic-ai/sdk (ANTHROPIC_API_KEY тохируулсан үед)
 
@@ -134,14 +135,45 @@ const PLAN_SCHEMA = {
   additionalProperties: false,
 };
 
+const PARSE_SYSTEM = `Чи Монгол иргэнд бичиг баримт бүрдүүлэхэд тусалдаг. Хэрэглэгч банк, сургууль, ажил олгогч, элчин сайдын яам зэрэг
+байгууллагаас өгсөн бүрдүүлэх жагсаалтаа текстээр эсвэл зургаар оруулна.
+Оролт нь JSON: today, text (жагсаалт; хоосон бол хавсаргасан зурган дээрх жагсаалтыг унш),
+emongoliaServices (e-Mongolia-оос шууд PDF-ээр авч болох лавлагаа, тодорхойлолтын нэрс).
+
+Жагсаалтын мөр бүрийг нэг item болго. Жагсаалтад байхгүй мөр нэмэхгүй, байгааг хасахгүй.
+Нэг мөрөнд хоёр өөр бичиг баримт бичигдсэн бол тусад нь салга. Гарчиг, тайлбар өгүүлбэрийг item болгохгүй.
+- label: тухайн мөрийн бичиг баримтын нэр (дугаар, тэмдэгтгүй, товч).
+- e-Mongolia-оос лавлагаагаар авч болох бол source="emongolia", service-д emongoliaServices-ээс ЯГ тохирох нэрийг үсэг алдалгүй бич
+  (жишээ нь «иргэний үнэмлэхний хуулбар» → «Иргэний үнэмлэхийн лавлагаа»). Жагсаалт гадаад хэл дээр шаардсан бол
+  «(гадаад хэлээр)» хувилбарыг сонго. Тохирох нэр жагсаалтад байхгүй ч e-Mongolia-д байж болох төрийн лавлагаа бол
+  service-д түүний албан ёсны нэрийг бич.
+- Цээж зураг, анкет, өргөдөл, ажлын газрын тодорхойлолт, банкны хуулга, эх хувь бичиг баримт гэх мэт e-Mongolia-оос
+  авах боломжгүй бол source="self", service="", note-д хаанаас, яаж бэлдэхийг товч бич.
+- note: жагсаалтад бичигдсэн нөхцөл (хувь тоо, хугацаа, баталгаажуулалт) байвал, үгүй бол "".
+- years: Нийгмийн даатгалын лавлагаа мэт хугацааны интервал сонгодог лавлагаанд жагсаалтад заасан жилийн тоо
+  (жишээ нь «сүүлийн 2 жилийн» → 2, сараар бол дээш нь бүхэл жил), заагаагүй бол 1. Бусад бүх мөрөнд 0.
+- subject: хүүхдийн бичиг баримт бол "child", бусад үед "self".
+title: жагсаалтын товч нэр (жишээ нь «Ипотекийн зээлийн материал»), тодорхойгүй бол «Бүрдүүлэх жагсаалт».
+addressee: жагсаалтаас хаана өгөх нь тодорхой бол «Хаана зориулж» талбарт бичих текст (жишээ нь «Хаан банкинд»), үгүй бол "".
+tips: жагсаалтад бичигдсэн чухал ерөнхий нөхцөл (хамгийн ихдээ 3), байхгүй бол хоосон. Зохиож бүү нэм.
+Монгол хэлээр бич. Хувийн танигдах мэдээлэл (нэр, регистр, утас) бичихгүй.`;
+
 export const TASKS = {
   summary: { system: SUMMARY_SYSTEM, schema: SUMMARY_SCHEMA },
   chat: { system: CHAT_SYSTEM, schema: CHAT_SCHEMA },
   plan: { system: PLAN_SYSTEM, schema: PLAN_SCHEMA },
+  parse: { system: PARSE_SYSTEM, schema: PLAN_SCHEMA }, // plan-тай ижил хэлбэр: extension нэг кодоор боловсруулна
 };
+
+// Жагсаалтын зургийг JSON-оос салгаж AI-д зураг хэлбэрээр өгнө
+function splitImage(payload) {
+  const { image, ...rest } = payload;
+  return { image: image?.data ? image : null, text: JSON.stringify(rest) };
+}
 
 // Амжилттай бол { ok: true, data }, алдаа гарвал { ok: false, status, message } буцаана
 export async function runClaude(Anthropic, client, task, payload) {
+  const { image, text } = splitImage(payload);
   try {
     const msg = await client.beta.messages.create({
       model: MODEL,
@@ -151,7 +183,10 @@ export async function runClaude(Anthropic, client, task, payload) {
       fallbacks: "default",
       output_config: { effort: "medium", format: { type: "json_schema", schema: task.schema } },
       system: task.system,
-      messages: [{ role: "user", content: JSON.stringify(payload) }],
+      messages: [{
+        role: "user",
+        content: image ? [{ type: "image", source: { type: "base64", media_type: image.media_type, data: image.data } }, { type: "text", text }] : text,
+      }],
     });
     if (msg.stop_reason === "refusal") return { ok: false, status: 422, message: "AI хариулахаас татгалзлаа" };
     if (msg.stop_reason === "max_tokens") return { ok: false, status: 502, message: "AI-ийн хариу хэт урт болж тасарлаа" };
@@ -194,6 +229,8 @@ const thinkingFor = model => (/^gemini-2\./.test(model) ? { thinkingBudget: 0 } 
 const GEMINI_TIMEOUT_MS = 35_000;
 
 async function callGemini(apiKey, task, payload, model) {
+  const { image, text: input } = splitImage(payload);
+  const parts = [...(image ? [{ inlineData: { mimeType: image.media_type, data: image.data } }] : []), { text: input }];
   let r;
   try {
     r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`, {
@@ -202,7 +239,7 @@ async function callGemini(apiKey, task, payload, model) {
       headers: { "content-type": "application/json", "x-goog-api-key": apiKey },
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: task.system }] },
-        contents: [{ role: "user", parts: [{ text: JSON.stringify(payload) }] }],
+        contents: [{ role: "user", parts }],
         generationConfig: { responseMimeType: "application/json", responseJsonSchema: task.schema, thinkingConfig: thinkingFor(model) },
       }),
     });
