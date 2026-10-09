@@ -48,6 +48,31 @@ showTab((await chrome.storage.local.get("tab")).tab === "list" ? "list" : "info"
 
 $("openEm").onclick = $("openEm2").onclick = () => chrome.tabs.create({ url: "https://e-mongolia.mn/home" });
 
+// «Дахин эхлүүлэх» (Миний мэдээлэл): хураангуй, асуулт хариулт, бичиг баримтын жагсаалтыг цэвэрлэнэ.
+// Сар бүрийн агшинг (snapshots) үлдээнэ — дараа сард өөрчлөлтийг харьцуулахад хэрэгтэй, интерфэйсэд харагддаггүй.
+$("reset").onclick = async () => {
+  if (!confirm("Хураангуй, асуулт хариулт, бичиг баримтын жагсаалтыг цэвэрлээд шинээр эхлэх үү?")) return;
+  state = null;
+  chat = [];
+  await chrome.storage.local.remove(["last", "chat"]);
+  $("question").value = "";
+  $("summary").innerHTML = "";
+  status("");
+  renderChat(); // хуучин мессежийг арилгаж, санал болгох асуултуудыг сэргээнэ
+  render();
+};
+
+// «Дахин эхлүүлэх» (Жагсаалтаар бүрдүүлэх): оруулсан жагсаалт, зураг, цуглуулалтын төлөвийг цэвэрлэнэ
+$("reset2").onclick = async () => {
+  if (!confirm("Жагсаалт болон цуглуулалтын төлөвийг цэвэрлээд шинээр эхлэх үү?")) return;
+  listPlan = null;
+  $("list").value = "";
+  $("img").value = "";
+  listStatus("");
+  await chrome.storage.local.remove("listPlan");
+  renderList();
+};
+
 // e-Mongolia-оос мэдээлэл татах явц (content.js-ээс)
 chrome.runtime.onMessage.addListener(msg => {
   if (msg.type === "PROGRESS") status(`e-Mongolia-оос мэдээлэл татаж байна… (${msg.done + 1}/${msg.total}) ${msg.name}`);
@@ -62,6 +87,7 @@ async function service(path, payload) {
 // «Шинжлэх»: мэдээлэл татах → нууцалж хадгалах → AI хураангуй
 $("analyze").onclick = async () => {
   $("analyze").disabled = true;
+  $("reset").disabled = true;
   show("openEm", false);
   try {
     const [tab] = await chrome.tabs.query({ url: "https://e-mongolia.mn/*" });
@@ -96,6 +122,7 @@ $("analyze").onclick = async () => {
     status(e.message, "err");
   }
   $("analyze").disabled = false;
+  $("reset").disabled = false;
   render();
 };
 
@@ -419,6 +446,8 @@ function renderChat() {
 
 function renderList() {
   show("listCard", !!listPlan);
+  show("reset2", !!listPlan);
+  $("reset2").disabled = !!listPlan?.running;
   $("listPlan").innerHTML = listPlan ? planHtml(listPlan, "list") : "";
   $("parse").disabled = !!listPlan?.running;
   chrome.storage.local.set({ listPlan }).catch(() => {});
@@ -426,6 +455,7 @@ function renderList() {
 
 function render() {
   const snap = state?.snap, sm = state?.summary;
+  show("reset", !!snap || chat.length > 0);
   show("summaryCard", !!sm);
   show("chatCard", !!sm);
   show("detailsBox", !!snap);

@@ -62,7 +62,10 @@
     <div class="card">
       <button id="analyze" class="primary">Шинжлэх</button>
       <div id="status" class="small muted" style="margin-top:8px"></div>
-      <button id="openEm" class="ghost small hidden" style="margin-top:8px">e-Mongolia нээх</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button id="openEm" class="ghost small hidden">e-Mongolia нээх</button>
+        <button id="reset" class="ghost small hidden">↺ Дахин эхлүүлэх</button>
+      </div>
     </div>
 
     <div id="summaryCard" class="card hidden">
@@ -99,7 +102,10 @@
       <label class="small muted">эсвэл зураг: <input type="file" id="img" accept="image/png, image/jpeg, image/webp"></label>
       <button id="parse" class="primary" style="margin-top:10px">Жагсаалтыг шинжлэх</button>
       <div id="listStatus" class="small muted" style="margin-top:8px"></div>
-      <button id="openEm2" class="ghost small" style="margin-top:8px">e-Mongolia нээх</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <button id="openEm2" class="ghost small">e-Mongolia нээх</button>
+        <button id="reset2" class="ghost small hidden">↺ Дахин эхлүүлэх</button>
+      </div>
     </div>
 
     <div id="listCard" class="card hidden"><div id="listPlan"></div></div>
