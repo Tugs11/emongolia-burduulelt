@@ -10,9 +10,11 @@
 
    Аль алинд нь **Цуглуулах** дарахад e-Mongolia-оос лавлагаануудыг PDF-ээр татаж, **нэг ZIP багц** болгоно: `Downloads/Burduulelt/<зорилго>_<огноо>.zip`. Багцад PDF бүр болон `Жагсаалт.txt` (өөрөө бэлдэх зүйлс, зөвлөмж) орно.
 
+Таб бүрт **↺ Дахин эхлүүлэх** товч байна. Энэ нь тухайн табын хураангуй, chat эсвэл жагсаалтыг цэвэрлэж шинээр эхлүүлнэ. Сар бүрийн агшин (snapshot) устахгүй.
+
 Хэрэглэгч ямар нэг тохиргоо, API key оруулахгүй. AI-г төслийн сервис ([worker/](worker/)) дуудна.
 
-> Өмнө нь энэ repo-д хоёр тусдаа extension байсан: «Бүрдүүлэлт AI» (`extension/`, жагсаалтаар PDF татах) ба «Миний мэдээлэл AI» (`minii-medeelel/extension/`). 2026-10-08-нд хоёуланг нь нэг extension болгож `extension/`-д нэгтгэсэн. Хоёр AI сервисийг мөн `worker/`-д нэгтгэсэн.
+> Өмнө нь энэ repo-д хоёр тусдаа extension байсан: «Бүрдүүлэлт AI» (`extension/`, жагсаалтаар PDF татах) ба «Миний мэдээлэл AI» (`minii-medeelel/extension/`). 2026-10-08-нд хоёуланг нь нэг extension болгож `extension/`-д нэгтгэсэн. Хоёр AI сервисийг мөн `worker/`-д нэгтгэсэн. `minii-medeelel/` хавтас repo-оос хасагдсан. Өмнө нь `minii-medeelel/extension`-ийг суулгасан бол `chrome://extensions` дээрээс **Remove** хийгээд доорх ZIP-ийг суулгана.
 
 ## Татаж суулгах
 
@@ -36,9 +38,9 @@ side panel
   │    ├─ сар бүрийн агшинг chrome.storage.local-д хадгална, өмнөх сартай diff()
   │    ├─ POST /summarize → { headline, alerts[], changes[], ok[] }
   │    └─ chat: POST /chat { question, history, data, summary, services } → { answer, services[], intent, purpose }
-  │             intent=documents → POST /plan { purpose, emongoliaServices } → { title, items[], tips[] }
+  │             intent=documents → POST /plan { purpose, emongoliaServices } → { title, addressee, language, addresseeForeign, items[], tips[] }
   ├─ «Жагсаалтаар бүрдүүлэх» таб
-  │    └─ POST /parse { text | image, emongoliaServices } → { title, items[], tips[] }  (/plan-тай ижил хэлбэр)
+  │    └─ POST /parse { text | image, emongoliaServices } → /plan-тай ижил хэлбэр
   │       AI ажиллахгүй бол catalog.js localPlan(): түлхүүр үгээр задална (зураг уншихгүй)
   └─ хоёуланд нь: catalog.js matchService() → эргэлзээтэй бол хэрэглэгч сонгоно (сонголтыг санана)
        → background.js COLLECT_DOC → collector.js (маягт бөглөх, PDF) → zip.js → нэг ZIP
@@ -144,7 +146,15 @@ npx wrangler deploy                      # → https://minii-medeelel-ai.<нэр
 ```
 Гарсан URL-ийг [extension/config.js](extension/config.js)-ийн `SERVICE_URL`-д бичээд push хийнэ.
 
-**Нэгтгэсний дараа нэг удаа дахин deploy хийнэ.** «Жагсаалтаар» табын `/parse` endpoint шинээр нэмэгдсэн. Deploy хийх хүртэл энэ таб жагсаалтыг AI-гүйгээр, түлхүүр үгээр задална, зураг уншихгүй. Бусад функц өмнөх шигээ ажиллана.
+Нэгтгэсэн `worker/`-ийг 2026-10-09-нд deploy хийж, 4 endpoint-ыг зохиомол өгөгдлөөр шалгасан:
+
+| Endpoint | Үр дүн |
+|---|---|
+| `/parse` | 4 мөртэй жагсаалтыг 3 e-Mongolia лавлагаа + 1 өөрөө бэлдэх зүйл болгон задалсан (37 сек, нөөц загвар руу шилжсэн) |
+| `/plan` | Солонгосын визэд `language: англи`, `addresseeForeign: Embassy of the Republic of Korea in Mongolia` |
+| `/summarize`, `/chat` | ✓ (2–6 сек) |
+
+AI сервис ажиллахгүй үед «Жагсаалтаар» таб жагсаалтыг түлхүүр үгээр задална. Энэ горимд зураг уншихгүй.
 
 - Байршил: Gemini API зарим бүсэд (жишээ нь Hong Kong) дэмжигддэггүй. Тиймээс `wrangler.toml`-д `[placement] region = "gcp:us-central1"` тохиргоогоор Worker-ийг АНУ-д ажиллуулдаг.
 - Тогтвортой байдал: нэг загвар 35 секундэд хариу өгөхгүй, завгүй эсвэл хязгаарт хүрсэн бол дараагийн үнэгүй загвар руу шилжинэ (`worker/src/ai.js`-ийн `GEMINI_MODELS`).
@@ -174,6 +184,8 @@ npx wrangler deploy                      # → https://minii-medeelel-ai.<нэр
 
 - [ ] «Жагсаалтаар» табыг бодит e-Mongolia session дээр 3–5 жагсаалтаар туршиж, `HINTS`-ийг шинэчлэх.
 - [ ] Машинтай бүртгэл дээр торгууль, оношилгоог бодитоор шалгах.
+- [ ] Хүүхэдтэй бүртгэл дээр «Хүүхдийн регистрийн дугаар» бөглөлтийг шалгах.
+- [ ] «(гадаад хэлээр)» лавлагааны «Хэл сонгох» бөглөлтийг бодит e-Mongolia маягт дээр шалгах.
 - [ ] Чухал анхааруулгуудыг (шинэ торгууль, төлөгдөөгүй ЭМД, дуусах бичиг баримт) AI-аас гадна кодоор давхар шалгах.
 - [ ] Хэтэвчийн нэхэмжлэх болон e-Mongolia-ийн мэдэгдлийг нэмэх.
 - [ ] Сар бүр сануулах (`chrome.alarms`).
