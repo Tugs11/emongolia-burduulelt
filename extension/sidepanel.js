@@ -84,6 +84,33 @@ async function service(path, payload) {
   return r.json();
 }
 
+// Ижил хүсэлтэд үргэлж ижил жагсаалт: AI-ийн /plan, /parse хариуг энэ компьютерт 30 хоног хадгална.
+// «Шинээр гаргах» (fresh) дарвал AI-аас дахин авч хадгалсныг солино.
+const PLAN_TTL = 30 * 24 * 3600 * 1000;
+async function cachedService(key, path, payload, fresh = false) {
+  const { planCache = {} } = await chrome.storage.local.get("planCache");
+  const hit = planCache[key];
+  if (!fresh && hit && Date.now() - hit.at < PLAN_TTL) return hit.data;
+  const data = await service(path, payload);
+  planCache[key] = { at: Date.now(), data };
+  for (const k of Object.keys(planCache).sort((a, b) => planCache[b].at - planCache[a].at).slice(50)) delete planCache[k];
+  await chrome.storage.local.set({ planCache });
+  return data;
+}
+
+// Хүсэлтийн түлхүүр: «Компани байгуулах бичиг баримт бүрдүүл.» = «компани байгуулахад бичиг баримт бүрдүүлэх».
+// Ерөнхий үгсийг хасаж, үг бүрийн эхний 4 үсгээр (нөхцөлийн дагавар үл хамаарч), дарааллаас үл хамааран тааруулна.
+const FILLER = /^(бүрдүүл|бичиг|баримт|материал|жагсаалт|шаардлага|шаардагд|хэрэгтэй|бэлд|гарга|надад|миний|ямар|юу|вэ|бэ|уу|үү)/;
+function requestKey(s) {
+  const all = String(s).toLowerCase().replace(/[^\p{L}\p{N}\s]/gu, " ").split(/\s+/).filter(Boolean);
+  const words = all.filter(w => !FILLER.test(w));
+  return [...new Set((words.length ? words : all).map(w => w.slice(0, 4)))].sort().join(" ");
+}
+
+// Бичиг баримт бүрдүүлэх хүсэлтийг AI-аас хамааралгүйгээр танина: ийм хүсэлт бүрт жагсаалт заавал гарна
+// (AI-д ангилуулахад заримдаа энгийн хариулт гарч байсан, жишээ нь «Компани байгуулах бичиг баримт бүрдүүл»).
+const DOC_REQUEST = /бүрдүүл|материал|(бичиг\s*баримт|лавлагаа)\S*\s+(хэрэгтэй|шаардлагатай|шаардагд|бэлд|цуглуул)|ямар\s+(бичиг\s*баримт|лавлагаа)|виз\S*\s+мэдүүл/i;
+
 // «Шинжлэх»: мэдээлэл татах → нууцалж хадгалах → AI хураангуй
 $("analyze").onclick = async () => {
   $("analyze").disabled = true;
@@ -148,6 +175,15 @@ async function ask(question) {
   $("send").disabled = true;
   renderChat();
   try {
+    if (DOC_REQUEST.test(question)) {
+      // Тогтмол хэлбэр: гарчиг → e-Mongolia-оос цуглуулах → «Цуглуулах» → өөрөө бэлдэх
+      const msg = { role: "assistant", text: "Бичиг баримтын жагсаалтыг бэлдлээ. e-Mongolia-оос авах лавлагаануудыг «Цуглуулах» дарж нэг ZIP болгон татна.", links: [], plan: { loading: true } };
+      chat[chat.length - 1] = msg;
+      renderChat();
+      await makePlan(msg, question.slice(0, 300), question);
+      $("send").disabled = false;
+      return renderChat();
+    }
     const services = await findServices(question);
     const { sources, unavailable } = aiPayload();
     const r = await service("/chat", {
@@ -173,10 +209,11 @@ async function ask(question) {
 // --- Бичиг баримт бүрдүүлэх ---------------------------------------------------
 // Хоёр замаар жагсаалт гарна: chat-д зорилгоо бичих (/plan) эсвэл «Жагсаалтаар» табд байгууллагын жагсаалтаа оруулах (/parse).
 // Аль алинд нь e-Mongolia-оос авах зүйлсийг каталогтой тааруулж, «Цуглуулах» дарахад PDF-ээр татаад нэг ZIP болгоно.
-async function makePlan(msg, purpose, question) {
+async function makePlan(msg, purpose, question, fresh = false) {
   try {
-    const p = await service("/plan", { today: today(), purpose, question, emongoliaServices: await referenceTitles() });
-    msg.plan = await buildPlan({ ...p, title: p.title || purpose });
+    const payload = { today: today(), purpose, question, emongoliaServices: await referenceTitles() };
+    const p = await cachedService("plan:" + requestKey(question), "/plan", payload, fresh);
+    msg.plan = { ...(await buildPlan({ ...p, title: p.title || purpose })), purpose, question };
   } catch (e) {
     msg.plan = { error: "Жагсаалт гаргаж чадсангүй: " + e.message };
   }
@@ -328,6 +365,7 @@ function planHtml(plan, mi) {
     <div class="row" style="margin-top:6px">
       ${todo.length && done.length < todo.length ? `<button type="button" class="mini" data-act="collect" data-m="${mi}" ${plan.running ? "disabled" : ""}>${plan.running ? "Цуглуулж байна…" : `Цуглуулах (${todo.length - done.length})`}</button>` : ""}
       <button type="button" class="ghost mini" data-act="copy" data-m="${mi}">Жагсаалт хуулах</button>
+      ${(plan.question || plan.text) && !plan.running ? `<button type="button" class="ghost mini" data-act="regen" data-m="${mi}" title="Хадгалсан жагсаалтын оронд AI-аас шинээр гаргана">Шинээр гаргах</button>` : ""}
     </div>
     ${plan.bundle ? `<div class="bundle">📦 <b>${esc(plan.bundle.name)}</b><div class="small muted">${plan.bundle.count} PDF + Жагсаалт.txt · Downloads/Burduulelt</div>
       <button type="button" class="ghost mini" data-act="folder" data-m="${mi}">Хавтас нээх</button>
@@ -348,6 +386,12 @@ async function onPlanClick(e) {
   if (!plan) return;
   switch (b.dataset.act) {
     case "collect": return collectPlan(plan);
+    case "regen": {
+      if (plan === listPlan) return parseList(true);
+      const msg = chat[+b.dataset.m];
+      msg.plan = { loading: true }; renderChat();
+      return makePlan(msg, plan.purpose, plan.question, true);
+    }
     case "open": return openPdf(d);
     case "rezip": return downloadBundle(plan);
     case "page": return chrome.tabs.create({ url: d.url });
@@ -383,7 +427,10 @@ $("askForm").onsubmit = e => { e.preventDefault(); ask($("question").value); };
 
 // --- Жагсаалтаар бүрдүүлэх ----------------------------------------------------
 // Байгууллагаас өгсөн жагсаалтыг (текст эсвэл зураг) AI задална → каталогтой тааруулна → «Цуглуулах» → ZIP
-$("parse").onclick = async () => {
+$("parse").onclick = () => parseList();
+
+// fresh: «Шинээр гаргах» — ижил текстэд хадгалсан задлалтын оронд AI-аас дахин авна. Зургийн задлалтыг хадгалахгүй.
+async function parseList(fresh = false) {
   const text = $("list").value.trim(), img = $("img").files[0];
   if (!text && !img) return listStatus("Жагсаалтаа бичих эсвэл зургаа сонгоно уу.", "warn");
   $("parse").disabled = true;
@@ -391,7 +438,9 @@ $("parse").onclick = async () => {
   try {
     let p, note;
     try {
-      p = await service("/parse", { today: today(), text, ...(img && { image: await shrinkImage(img) }), emongoliaServices: await referenceTitles() });
+      const payload = { today: today(), text, ...(img && { image: await shrinkImage(img) }), emongoliaServices: await referenceTitles() };
+      p = img ? await service("/parse", payload)
+        : await cachedService("parse:" + text.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim(), "/parse", payload, fresh);
       note = `AI ${p.items.length} мөр олов.`;
     } catch (e) {
       // AI сервис ажиллахгүй бол (шинэчлэгдээгүй, хязгаарт хүрсэн…) түлхүүр үгээр задална. Зургийг AI-гүйгээр уншихгүй.
@@ -400,7 +449,7 @@ $("parse").onclick = async () => {
       note = "AI ажиллахгүй байсан тул түлхүүр үгээр задлав.";
     }
     listStatus(note + " e-Mongolia-тай тааруулж байна…");
-    listPlan = { ...(await buildPlan({ ...p, title: p.title || "Бүрдүүлэх жагсаалт" })), source: "list" };
+    listPlan = { ...(await buildPlan({ ...p, title: p.title || "Бүрдүүлэх жагсаалт" })), source: "list", ...(!img && { text }) };
     const unsure = listPlan.em.filter(d => !d.match).length;
     listStatus(note + (unsure ? ` ${unsure} мөрийг доороос сонгоно уу.` : ""), unsure ? "warn" : "ok");
   } catch (e) {
@@ -408,7 +457,7 @@ $("parse").onclick = async () => {
   }
   $("parse").disabled = false;
   renderList();
-};
+}
 
 // Зургийг AI руу илгээхээс өмнө багасгана (сервис ~1.5MB-аас том хүсэлт хүлээж авахгүй)
 async function shrinkImage(file, max = 1600) {

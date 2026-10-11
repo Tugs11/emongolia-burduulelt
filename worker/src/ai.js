@@ -70,8 +70,9 @@ summary (өмнө гаргасан хураангуй), services (асуултт
 - data-д байгаа асуултад services хэрэггүй бол хоосон үлдээ.
 - e-Mongolia-аас өөр систем, апп, банк, вэбсайтын нэр бүү зохио. Хувийн танигдах мэдээлэл бичихгүй.
 - Монгол хэлээр, товч, ойлгомжтой хариул.
-- Хэрэглэгч бичиг баримт бүрдүүлэхийг хүсвэл (жишээ нь гадаад улсын виз мэдүүлэх, сургууль, ажилд орох, зээл авах)
-  intent="documents" гэж тэмдэглэ. purpose-д зорилгыг товч бич (жишээ нь «Өмнөд Солонгосын жуулчны виз»).
+- Хэрэглэгч ямар нэг зорилгоор бичиг баримт бүрдүүлэх, бэлдэх, эсвэл ямар бичиг баримт, материал хэрэгтэйг асуувал
+  (жишээ нь гадаад улсын виз мэдүүлэх, сургууль, ажилд орох, зээл авах, компани байгуулах, тусгай зөвшөөрөл авах,
+  тэтгэвэр тогтоолгох) ҮРГЭЛЖ intent="documents" гэж тэмдэглэ. e-Mongolia-д тухайн үйлчилгээ байсан ч энэ дүрэм хэвээр. purpose-д зорилгыг товч бич (жишээ нь «Өмнөд Солонгосын жуулчны виз»).
   answer-т «… бичиг баримтын жагсаалтыг бэлдлээ» гэх мэт нэг өгүүлбэр бич. Энэ үед services хоосон байна.
   Бусад бүх үед intent="answer", purpose="".`;
 
@@ -251,7 +252,8 @@ async function callGemini(apiKey, task, payload, model) {
       body: JSON.stringify({
         systemInstruction: { parts: [{ text: task.system }] },
         contents: [{ role: "user", parts }],
-        generationConfig: { responseMimeType: "application/json", responseJsonSchema: task.schema, thinkingConfig: thinkingFor(model) },
+        // seed: ижил оролтод аль болох ижил хариу (жагсаалт тогтвортой байх). Gemini 3-т temperature-ийг 1.0-оос бууруулахгүй (Google-ийн зөвлөмж).
+        generationConfig: { responseMimeType: "application/json", responseJsonSchema: task.schema, thinkingConfig: thinkingFor(model), seed: 7 },
       }),
     });
   } catch (e) {
